@@ -8,8 +8,7 @@ from factor_operators import *
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data" / "price"
-INPUT_PATH = DATA_DIR / "000001_SZ_5y_daily.csv"
-OUTPUT_PATH = DATA_DIR / "000001_SZ_5y_daily_with_factors.csv"
+FACTOR_DIR = PROJECT_ROOT / "data" / "factor"
 
 
 def alpha2(data: pd.DataFrame) -> pd.Series:
@@ -19,9 +18,9 @@ def alpha2(data: pd.DataFrame) -> pd.Series:
         1,
     )
     """
-    price_range = (data["High"] - data["Low"]).replace(0, np.nan)
+    price_range = (data["high"] - data["low"]).replace(0, np.nan)
     close_location = (
-        (data["Close"] - data["Low"]) - (data["High"] - data["Close"])
+        (data["close"] - data["low"]) - (data["high"] - data["close"])
     ) / price_range
 
     return (-DELTA(close_location, periods=1)).rename("Alpha2")
@@ -52,7 +51,7 @@ def alpha5(data: pd.DataFrame) -> pd.Series:
         3,
     )
     """
-    price_volume_corr = CORR(TSRANK(data['Volume'], 5), TSRANK(data['High'], 5), 5)
+    price_volume_corr = CORR(TSRANK(data['volume'], 5), TSRANK(data['high'], 5), 5)
     return (-TSMAX(price_volume_corr, 3)).rename('alpha5')
 
 
@@ -69,9 +68,9 @@ def alpha9(data: pd.DataFrame) -> pd.Series:
         2,
     )
     """
-    change = (data['High'] + data['Low']) / 2
-    delay_change = -DELAY(data['High'] + data['Low']) / 2
-    return SMA((change + delay_change) * (data['High'] - data['Low']) / data['Volume'], 7, 2).rename('Alpha9')
+    change = (data['high'] + data['low']) / 2
+    delay_change = -DELAY(data['high'] + data['low']) / 2
+    return SMA((change + delay_change) * (data['high'] - data['low']) / data['volume'], 7, 2).rename('Alpha9')
 
 
 def alpha11(data: pd.DataFrame) -> pd.Series:
@@ -83,11 +82,11 @@ def alpha11(data: pd.DataFrame) -> pd.Series:
         6,
     )
     """
-    tail = data['Close'] - data['Low'] #下影线
-    head = data['High'] - data['Close'] #上影线
-    range = (data['High'] - data['Low']).replace(0, np.nan) #极差
-    weighted_clv = ((tail - head) / range) * data['Volume']
-    """
+    tail = data['close'] - data['low'] #下影线
+    head = data['high'] - data['close'] #上影线
+    range = (data['high'] - data['low']).replace(0, np.nan) #极差
+    weighted_clv = ((tail - head) / range) * data['volume']
+    r"""
     Close Location Value（CLV，收盘位置值）
     它的核心意义是衡量：当天交易结束时，多空双方谁更占优势。
     收盘接近最高价：说明临近收盘仍有人愿意追高买入，买方相对强，指标接近 1
@@ -114,14 +113,14 @@ def alpha14(data: pd.DataFrame) -> pd.Series:
     """
     Alpha14 = CLOSE - DELAY(CLOSE, 5)
     """
-    return(data['Close'] - DELAY(data['Close'], 5)).rename('Alpha14')
+    return(data['close'] - DELAY(data['close'], 5)).rename('Alpha14')
 
 
 def alpha15(data: pd.DataFrame) -> pd.Series:
     """
     Alpha15 = OPEN / DELAY(CLOSE, 1) - 1
     """
-    return(data['Open'] / DELAY(data['Close'], 1) - 1).rename('Alpha15')
+    return(data['open'] / DELAY(data['close'], 1) - 1).rename('Alpha15')
 
 
 def alpha20(data: pd.DataFrame) -> pd.Series:
@@ -132,8 +131,8 @@ def alpha20(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    change_in_6 = data['Close'] - DELAY(data['Close'], 6)
-    change_in_6_pct = change_in_6 / DELAY(data['Close'], 6) * 100
+    change_in_6 = data['close'] - DELAY(data['close'], 6)
+    change_in_6_pct = change_in_6 / DELAY(data['close'], 6) * 100
     return(change_in_6_pct).rename('Alpha20')
 
 
@@ -145,8 +144,8 @@ def alpha29(data: pd.DataFrame) -> pd.Series:
         * VOLUME
     )
     """
-    change_in_6 = data['Close'] - DELAY(data['Close'], 6)
-    change_in_6_volume = change_in_6 / DELAY(data['Close'], 6) * data['Volume']
+    change_in_6 = data['close'] - DELAY(data['close'], 6)
+    change_in_6_volume = change_in_6 / DELAY(data['close'], 6) * data['volume']
     return(change_in_6_volume).rename('Alpha29')
 
 def alpha31(data: pd.DataFrame) -> pd.Series:
@@ -157,8 +156,8 @@ def alpha31(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    mean_close = MEAN(data['Close'], 12)
-    deviation = (data["Close"] - mean_close) / mean_close
+    mean_close = MEAN(data['close'], 12)
+    deviation = (data["close"] - mean_close) / mean_close
     return(deviation * 100).rename('Alpha31')
 
 
@@ -172,20 +171,20 @@ def alpha40(data: pd.DataFrame) -> pd.Series:
     """
     # TODO: Fix Alpha40. previous_close currently stores the .notna method
     # instead of the delayed close Series, so this implementation raises.
-    previous_close = DELAY(data['Close'], 1).notna
-    is_up = data["Close"] > previous_close
-    is_down_or_flat = data["Close"] <= previous_close
-    up_volume = data["Volume"].where(is_up, 0)
-    down_or_flat_volume = data["Volume"].where(is_down_or_flat, 0)
+    previous_close = DELAY(data['close'], 1).notna
+    is_up = data["close"] > previous_close
+    is_down_or_flat = data["close"] <= previous_close
+    up_volume = data["volume"].where(is_up, 0)
+    down_or_flat_volume = data["volume"].where(is_down_or_flat, 0)
 
     up_volume = (
-        data["Volume"]
+        data["volume"]
         .where(is_up, 0)
         .where(previous_close)
     )
 
     down_or_flat_volume = (
-        data["Volume"]
+        data["volume"]
         .where(is_down_or_flat, 0)
         .where(previous_close)
     )
@@ -227,8 +226,8 @@ def alpha46(data: pd.DataFrame) -> pd.Series:
         + MEAN(CLOSE, 24)
     ) / (4 * CLOSE)
     """
-    means = MEAN(data['Close'], 3) + MEAN(data['Close'], 6) + MEAN(data['Close'], 12)+ MEAN(data['Close'], 24)
-    return(means / (4 * data['Close'])).rename('Alpha46')
+    means = MEAN(data['close'], 3) + MEAN(data['close'], 6) + MEAN(data['close'], 12)+ MEAN(data['close'], 24)
+    return(means / (4 * data['close'])).rename('Alpha46')
 
 def alpha53(data: pd.DataFrame) -> pd.Series:
     """
@@ -247,10 +246,10 @@ def alpha60(data: pd.DataFrame) -> pd.Series:
         20,
     )
     """
-    tail = data['Close'] - data['Low'] #下影线
-    head = data['High'] - data['Close'] #上影线
-    range = (data['High'] - data['Low']).replace(0, np.nan) #极差
-    weighted_clv = ((tail - head) / range) * data['Volume']
+    tail = data['close'] - data['low'] #下影线
+    head = data['high'] - data['close'] #上影线
+    range = (data['high'] - data['low']).replace(0, np.nan) #极差
+    weighted_clv = ((tail - head) / range) * data['volume']
     return SUM(weighted_clv, 20).rename('Alpha60')
 
 
@@ -290,8 +289,8 @@ def alpha80(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    return((data['Volume'] - DELAY(data['Volume'], 5))
-           / DELAY(data['Volume'], 5)
+    return((data['volume'] - DELAY(data['volume'], 5))
+           / DELAY(data['volume'], 5)
            * 100).rename('Alpha80')
 
 
@@ -316,7 +315,7 @@ def alpha168(data: pd.DataFrame) -> pd.Series:
     """
     Alpha168 = -VOLUME / MEAN(VOLUME, 20)
     """
-    return(-data['Volume'] / MEAN(data['Volume'], 20)).rename('Alpha168')
+    return(-data['volume'] / MEAN(data['volume'], 20)).rename('Alpha168')
 
 
 def alpha191(data: pd.DataFrame) -> pd.Series:
@@ -327,9 +326,9 @@ def alpha191(data: pd.DataFrame) -> pd.Series:
         - CLOSE
     )
     """
-    return(CORR(MEAN(data['Volume'], 20), data['Low'], 5)
-           + (data['High'] + data['Low']) / 2
-           - data['Close']).rename('Alpha191')
+    return(CORR(MEAN(data['volume'], 20), data['low'], 5)
+           + (data['high'] + data['low']) / 2
+           - data['close']).rename('Alpha191')
 
 
 FACTORS = {
@@ -360,19 +359,39 @@ def calculate_factors(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    data = pd.read_csv(INPUT_PATH, parse_dates=["Date"], index_col="Date")
-    result = calculate_factors(data)
+    price_paths = sorted(DATA_DIR.glob("*_5y_daily.csv"))
+    FACTOR_DIR.mkdir(parents=True, exist_ok=True)
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(
-        OUTPUT_PATH,
-        encoding="utf-8-sig",
-        date_format="%Y-%m-%d",
-    )
+    for factor_name, factor_func in FACTORS.items():
+        all_results = []
 
-    print(f"已保存 {len(result)} 条记录")
-    print(f"文件位置：{OUTPUT_PATH.resolve()}")
-    print(result[["Close", *FACTORS]].tail())
+        for price_path in price_paths:
+            data = pd.read_csv(
+                price_path,
+                parse_dates=["trade_date"],
+            )
+
+            result = data[["trade_date", "trade_symbol"]].copy()
+            result["factor_value"] = factor_func(data)
+            all_results.append(result)
+
+        combined_result = pd.concat(
+            all_results,
+            ignore_index=True,
+        )
+        combined_result = combined_result.sort_values(
+            ["trade_date", "trade_symbol"]
+        ).reset_index(drop=True)
+
+        output_path = FACTOR_DIR / f"{factor_name}.csv"
+        combined_result.to_csv(
+            output_path,
+            index=False,
+            encoding="utf-8-sig",
+            date_format="%Y-%m-%d",
+        )
+
+        print(f"{factor_name}: 已保存 {len(combined_result)} 行到 {output_path}")
 
 
 if __name__ == "__main__":

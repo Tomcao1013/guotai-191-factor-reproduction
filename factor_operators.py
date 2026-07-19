@@ -47,7 +47,14 @@ def CORR(series_a: pd.Series,
         ) -> pd.Series:
     if periods < 2:
         raise ValueError("CORR's periods value must be greater than 2")
-    return series_a.rolling(window=periods, min_periods=periods).corr(series_b)
+    correlation = series_a.rolling(
+        window=periods,
+        min_periods=periods,
+    ).corr(series_b)
+    return correlation.replace(
+        [float("inf"), float("-inf")],
+        float("nan"),
+    )
 
 def SMA(
     series: pd.Series,
