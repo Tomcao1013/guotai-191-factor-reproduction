@@ -41,9 +41,9 @@ def test_requested_factor_function_has_formula_docstring(factor_number):
 def test_alpha2_applies_negative_one_day_delta():
     data = pd.DataFrame(
         {
-            "High": [12.0, 13.0, 15.0],
-            "Low": [8.0, 9.0, 9.0],
-            "Close": [11.0, 10.0, 12.0],
+            "high": [12.0, 13.0, 15.0],
+            "low": [8.0, 9.0, 9.0],
+            "close": [11.0, 10.0, 12.0],
         }
     )
 
@@ -53,37 +53,30 @@ def test_alpha2_applies_negative_one_day_delta():
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_calculate_factors_adds_alpha2_without_mutating_input():
+def test_calculate_factors_adds_registered_factors_without_mutating_input():
     data = pd.DataFrame(
         {
-            "Open": [10.0, 11.0],
-            "High": [12.0, 13.0],
-            "Low": [8.0, 9.0],
-            "Close": [11.0, 10.0],
-            "Volume": [1000.0, 1200.0],
+            "open": [10.0, 11.0],
+            "high": [12.0, 13.0],
+            "low": [8.0, 9.0],
+            "close": [11.0, 10.0],
+            "volume": [1000.0, 1200.0],
         }
     )
     original = data.copy()
 
     result = calculate_factors(data)
 
-    assert result.columns.tolist() == [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-        "Alpha2",
-    ]
+    assert result.columns.tolist() == [*data.columns, *FACTORS]
     pd.testing.assert_frame_equal(data, original)
 
 
 def test_alpha2_returns_nan_when_high_equals_low():
     data = pd.DataFrame(
         {
-            "High": [12.0, 13.0, 10.0],
-            "Low": [8.0, 9.0, 10.0],
-            "Close": [11.0, 10.0, 10.0],
+            "high": [12.0, 13.0, 10.0],
+            "low": [8.0, 9.0, 10.0],
+            "close": [11.0, 10.0, 10.0],
         }
     )
 
@@ -95,16 +88,14 @@ def test_alpha2_returns_nan_when_high_equals_low():
 def test_calculate_factors_uses_registered_factor(monkeypatch):
     data = pd.DataFrame(
         {
-            "High": [12.0, 13.0],
-            "Low": [8.0, 9.0],
-            "Close": [10.0, 11.0],
+            "close": [10.0, 11.0],
         }
     )
 
     def alpha_test(frame: pd.DataFrame) -> pd.Series:
-        return (frame["Close"] * 2).rename("AlphaTest")
+        return (frame["close"] * 2).rename("AlphaTest")
 
-    monkeypatch.setitem(FACTORS, "AlphaTest", alpha_test)
+    monkeypatch.setattr(factor, "FACTORS", {"AlphaTest": alpha_test})
 
     result = calculate_factors(data)
 

@@ -2,40 +2,19 @@ import pandas as pd
 
 
 def DELTA(series: pd.Series, periods: int = 1) -> pd.Series:
-    """Return the current value minus the value from `periods` rows ago."""
     return series - series.shift(periods)
 
 def SUM(series: pd.Series, periods: int = 1) -> pd.Series:
-    """
-    计算序列过去 window 天的滚动和。
-
-    对应论文：SUM(A, n)
-    """
     return series.rolling(window=periods, min_periods=periods).sum()
 
 def DELAY(series: pd.Series, periods: int = 1) -> pd.Series:
-    """
-    获取序列 periods 个交易日前的值。
-
-    对应论文：DELAY(A, n)
-    """
     return series.shift(periods)
 
 def TSMAX(series: pd.Series, periods: int = 1) -> pd.Series:
-    """
-    序列 A过去 n 天的最大值
-
-    TSMAX(A, n)
-    """
     return series.rolling(window=periods).max()
 
 
 def TSMIN(series: pd.Series, periods: int = 1) -> pd.Series:
-    """
-    序列 A过去 n 天的最小值
-
-    TSMIN(A, n)
-    """
     return series.rolling(window=periods).min()
 
 def TSRANK(series: pd.Series, periods: int = 1) -> pd.Series:
@@ -71,4 +50,4 @@ def MEAN(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods, min_periods=periods).mean()
 
 def COUNT(series: pd.Series, periods: int = 1) -> pd.Series:
-    pass
+    return series.rolling(window=periods, min_periods=periods).sum()

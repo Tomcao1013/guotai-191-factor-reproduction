@@ -1,15 +1,7 @@
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
 from factor_operators import *
-
-
-PROJECT_ROOT = Path(__file__).resolve().parent
-DATA_DIR = PROJECT_ROOT / "data" / "price"
-FACTOR_DIR = PROJECT_ROOT / "data" / "factor"
-
 
 def alpha2(data: pd.DataFrame) -> pd.Series:
     """
@@ -39,9 +31,30 @@ def alpha3(data: pd.DataFrame) -> pd.Series:
         6,
     )
     """
-    # TODO: Implement Alpha3.
-    pass
+    previous_close = DELAY(data["close"], 1)
+    has_previous = previous_close.notna()
 
+    is_up = data["close"] > previous_close
+    is_down = data["close"] < previous_close
+
+    daily_value = pd.Series(
+        0.0,
+        index=data.index,
+    )
+
+    daily_value = daily_value.mask(
+        is_up,
+        data["close"] - np.minimum(data["low"], previous_close),
+    )
+
+    daily_value = daily_value.mask(
+        is_down,
+        data["close"] - np.maximum(data["high"], previous_close),
+    )
+
+    daily_value = daily_value.where(has_previous)
+
+    return SUM(daily_value, periods=6).rename("Alpha3")
 
 
 def alpha5(data: pd.DataFrame) -> pd.Series:
@@ -163,34 +176,21 @@ def alpha31(data: pd.DataFrame) -> pd.Series:
 
 def alpha40(data: pd.DataFrame) -> pd.Series:
     """
-    Alpha40 = (
+    Alpha40 =
         SUM(CLOSE > DELAY(CLOSE, 1) ? VOLUME : 0, 26)
         / SUM(CLOSE <= DELAY(CLOSE, 1) ? VOLUME : 0, 26)
         * 100
-    )
     """
-    # TODO: Fix Alpha40. previous_close currently stores the .notna method
-    # instead of the delayed close Series, so this implementation raises.
-    previous_close = DELAY(data['close'], 1).notna
-    is_up = data["close"] > previous_close
-    is_down_or_flat = data["close"] <= previous_close
+    previous_close = DELAY(data["close"], 1)
+    has_previous = previous_close.notna()
+
+    is_up = (data["close"] > previous_close) & has_previous
+    is_down_or_flat = (data["close"] <= previous_close) & has_previous
+
     up_volume = data["volume"].where(is_up, 0)
     down_or_flat_volume = data["volume"].where(is_down_or_flat, 0)
 
-    up_volume = (
-        data["volume"]
-        .where(is_up, 0)
-        .where(previous_close)
-    )
-
-    down_or_flat_volume = (
-        data["volume"]
-        .where(is_down_or_flat, 0)
-        .where(previous_close)
-    )
-
     up_volume_sum = SUM(up_volume, periods=26)
-
     down_or_flat_volume_sum = SUM(
         down_or_flat_volume,
         periods=26,
@@ -213,8 +213,20 @@ def alpha43(data: pd.DataFrame) -> pd.Series:
         6,
     )
     """
-    # TODO: Implement Alpha43.
-    pass
+    previous_close = DELAY(data['close'], 1)
+    is_higher_close = data['close'] > previous_close
+    has_previous = previous_close.notna()
+
+    signed_volume = pd.Series(0.0, index=data.index)
+    signed_volume = signed_volume.where(has_previous)
+    signed_volume = signed_volume.mask(is_higher_close, data["volume"])
+
+    is_lower_close = data['close'] < previous_close
+    signed_volume = signed_volume.mask(is_lower_close, -data["volume"])
+
+    result = SUM(signed_volume, periods=6)
+
+    return result.rename("Alpha43")
 
 
 def alpha46(data: pd.DataFrame) -> pd.Series:
@@ -233,9 +245,9 @@ def alpha53(data: pd.DataFrame) -> pd.Series:
     """
     Alpha53 = COUNT(CLOSE > DELAY(CLOSE, 1), 12) / 12 * 100
     """
-    # TODO: Implement Alpha53.
-    pass
-
+    previous_close = DELAY(data["close"], 1)
+    condition = (data["close"] > previous_close).where(previous_close.notna())
+    return (COUNT(condition, periods=12) / 12 * 100).rename("Alpha53")
 
 def alpha60(data: pd.DataFrame) -> pd.Series:
     """
@@ -255,18 +267,53 @@ def alpha60(data: pd.DataFrame) -> pd.Series:
 
 def alpha69(data: pd.DataFrame) -> pd.Series:
     """
-    DTM = (
+    Alpha69 = directional movement balance calculated from 20-period DTM and DBM sums.
+    """
+    #DTM
+    """
+        DTM = (
         OPEN <= DELAY(OPEN, 1)
         ? 0
         : MAX(HIGH - OPEN, OPEN - DELAY(OPEN, 1))
     )
+    """
+    previous_open = DELAY(data["open"], 1)
+    has_previous = previous_open.notna()
 
+    is_higher_open = data["open"] > previous_open
+
+    high_move = data["high"] - data["open"]
+    open_gap = data["open"] - previous_open
+
+    max_move_up = np.maximum(high_move, open_gap)
+
+    dtm = pd.Series(max_move_up, index=data.index)
+    dtm = dtm.where(is_higher_open, 0)
+    dtm = dtm.where(has_previous)
+
+    #DBM
+    """
     DBM = (
         OPEN >= DELAY(OPEN, 1)
         ? 0
         : MAX(OPEN - LOW, OPEN - DELAY(OPEN, 1))
     )
+    """
+    previous_open = DELAY(data["open"], 1)
+    has_previous = previous_open.notna()
 
+    is_lower_open = data["open"] < previous_open
+
+    low_move = data["open"] - data["low"]
+    open_gap = data["open"] - previous_open
+
+    max_move_down = np.maximum(low_move, open_gap)
+
+    dbm = pd.Series(max_move_down, index=data.index)
+    dbm = dbm.where(is_lower_open, 0)
+    dbm = dbm.where(has_previous)
+
+    """
     Alpha69 = (
         SUM(DTM, 20) > SUM(DBM, 20)
         ? (SUM(DTM, 20) - SUM(DBM, 20)) / SUM(DTM, 20)
@@ -277,9 +324,34 @@ def alpha69(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: Implement Alpha69.
-    pass
+    dtm_sum = SUM(dtm, periods=20)
+    dbm_sum = SUM(dbm, periods=20)
 
+    difference = dtm_sum - dbm_sum
+
+    is_dtm_greater = dtm_sum > dbm_sum
+    is_equal = dtm_sum == dbm_sum
+    is_dbm_greater = dtm_sum < dbm_sum
+
+    result = pd.Series(
+        np.nan,
+        index=data.index,
+        dtype=float,
+    )
+
+    result.loc[is_dtm_greater] = (
+        difference.loc[is_dtm_greater]
+        / dtm_sum.loc[is_dtm_greater]
+    )
+
+    result.loc[is_equal] = 0.0
+
+    result.loc[is_dbm_greater] = (
+        difference.loc[is_dbm_greater]
+        / dbm_sum.loc[is_dbm_greater]
+    )
+
+    return result.rename("Alpha69")
 
 def alpha80(data: pd.DataFrame) -> pd.Series:
     """
@@ -307,8 +379,12 @@ def alpha84(data: pd.DataFrame) -> pd.Series:
         20,
     )
     """
-    # TODO: Implement Alpha84.
-    pass
+    previous_close = DELAY(data["close"], 1)
+    price_change = data["close"] - previous_close
+    dir_volume = np.sign(price_change) * data["volume"]
+
+    result = SUM(dir_volume, periods=20)
+    return result.rename("Alpha84")
 
 
 def alpha168(data: pd.DataFrame) -> pd.Series:
@@ -330,9 +406,9 @@ def alpha191(data: pd.DataFrame) -> pd.Series:
            + (data['high'] + data['low']) / 2
            - data['close']).rename('Alpha191')
 
-
 FACTORS = {
     "Alpha2": alpha2,
+    "Alpha3": alpha3,
     "Alpha5": alpha5,
     "Alpha9": alpha9,
     "Alpha11": alpha11,
@@ -341,13 +417,17 @@ FACTORS = {
     "Alpha20": alpha20,
     "Alpha29": alpha29,
     "Alpha31": alpha31,
+    "Alpha40": alpha40,
+    "Alpha43": alpha43,
     "Alpha46": alpha46,
+    "Alpha53": alpha53,
     "Alpha60": alpha60,
+    "Alpha69": alpha69,
     "Alpha80": alpha80,
+    "Alpha84": alpha84,
     "Alpha168": alpha168,
     "Alpha191": alpha191,
 }
-
 
 def calculate_factors(data: pd.DataFrame) -> pd.DataFrame:
     result = data.copy()
@@ -356,43 +436,3 @@ def calculate_factors(data: pd.DataFrame) -> pd.DataFrame:
         result[name] = factor_func(data)
 
     return result
-
-
-def main() -> None:
-    price_paths = sorted(DATA_DIR.glob("*_5y_daily.csv"))
-    FACTOR_DIR.mkdir(parents=True, exist_ok=True)
-
-    for factor_name, factor_func in FACTORS.items():
-        all_results = []
-
-        for price_path in price_paths:
-            data = pd.read_csv(
-                price_path,
-                parse_dates=["trade_date"],
-            )
-
-            result = data[["trade_date", "trade_symbol"]].copy()
-            result["factor_value"] = factor_func(data)
-            all_results.append(result)
-
-        combined_result = pd.concat(
-            all_results,
-            ignore_index=True,
-        )
-        combined_result = combined_result.sort_values(
-            ["trade_date", "trade_symbol"]
-        ).reset_index(drop=True)
-
-        output_path = FACTOR_DIR / f"{factor_name}.csv"
-        combined_result.to_csv(
-            output_path,
-            index=False,
-            encoding="utf-8-sig",
-            date_format="%Y-%m-%d",
-        )
-
-        print(f"{factor_name}: 已保存 {len(combined_result)} 行到 {output_path}")
-
-
-if __name__ == "__main__":
-    main()
