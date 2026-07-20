@@ -30,11 +30,8 @@ python factor.py
 行情文件写入 `data/price/{code}_{market}_5y_daily.csv`；因子文件写入
 `data/factor/{FactorName}.csv`。
 
-## 文档
+## 参考资料
 
-- [更新记录](CHANGELOG.md)
-- [项目上手指南](PROJECT_ONBOARDING.md)
-- [领域术语与边界](CONTEXT.md)
 - [架构决策记录](docs/adr/)
 - [191 因子依赖分类](factor_plan.md)
 

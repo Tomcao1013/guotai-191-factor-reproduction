@@ -12,3 +12,9 @@ venv/
 # Local editor and OS files
 .vscode/
 .DS_Store
+
+# Local-only collaboration notes
+/CHANGELOG.md
+/CONTEXT.md
+/HANDOFF.md
+/PROJECT_ONBOARDING.md
