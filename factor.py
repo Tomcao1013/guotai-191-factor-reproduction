@@ -122,6 +122,19 @@ def alpha11(data: pd.DataFrame) -> pd.Series:
     return SUM(weighted_clv, 6).rename('Alpha11')
 
 
+def alpha13(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha13 = (
+        (HIGH * LOW) ^ 0.5
+        - VWAP
+    )
+    """
+    return(
+        (data['high'] * data['low']) ** 0.5
+        - data['vwap']
+    ).rename('Alpha13')
+
+
 def alpha14(data: pd.DataFrame) -> pd.Series:
     """
     Alpha14 = CLOSE - DELAY(CLOSE, 5)
@@ -174,6 +187,20 @@ def alpha20(data: pd.DataFrame) -> pd.Series:
     return(change_in_6_pct).rename('Alpha20')
 
 
+def alpha21(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha21 = REGBETA(
+        MEAN(CLOSE, 6),
+        SEQUENCE(6),
+    )
+    """
+    avg_close_6d = MEAN(data['close'], 6)
+    return(REGBETA(
+        avg_close_6d,
+        SEQUENCE(6)
+    )).rename('Alpha21')
+
+
 def alpha24(data: pd.DataFrame) -> pd.Series:
     """
     Alpha24 = SMA(
@@ -190,6 +217,71 @@ def alpha24(data: pd.DataFrame) -> pd.Series:
             1,
         )
     ).rename('Alpha24')
+
+
+def alpha25(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha25 = (
+        -1
+        * RANK(
+            DELTA(CLOSE, 7)
+            * (
+                1
+                - RANK(
+                    DECAYLINEAR(
+                        VOLUME / MEAN(VOLUME, 20),
+                        9,
+                    )
+                )
+            )
+        )
+        * (1 + RANK(SUM(RET, 250)))
+    )
+    """
+    # TODO: Developing
+    pass
+
+
+def alpha26(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha26 = (
+        SUM(CLOSE, 7) / 7
+        - CLOSE
+        + CORR(VWAP, DELAY(CLOSE, 5), 230)
+    )
+    """
+    close_mean_7d = SUM(data['close'], 7) / 7
+    vwap_close_correlation = CORR(
+        data['vwap'],
+        DELAY(data['close'], 5),
+        230,
+    )
+
+    return(
+        close_mean_7d
+        - data['close']
+        + vwap_close_correlation
+    ).rename('Alpha26')
+
+
+def alpha27(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha27 = WMA(
+        (
+            (CLOSE - DELAY(CLOSE, 3))
+            / DELAY(CLOSE, 3)
+            * 100
+        )
+        + (
+            (CLOSE - DELAY(CLOSE, 6))
+            / DELAY(CLOSE, 6)
+            * 100
+        ),
+        12,
+    )
+    """
+    # TODO: Developing
+    pass
 
 
 def alpha29(data: pd.DataFrame) -> pd.Series:
@@ -351,9 +443,15 @@ def alpha52(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    # TODO: 开发中
-    pass
+    typical_price = (data['high'] + data['low'] + data['close']) / 3
+    previous_typical_price = DELAY(typical_price, 1)
+    total_up_pressure_26d = SUM(MAX(0, data['high'] - previous_typical_price), 26)
+    total_down_pressure_26d = SUM(
+        MAX(0, previous_typical_price - data['low']),
+        26,
+    )
 
+    return(total_up_pressure_26d / total_down_pressure_26d * 100).rename('Alpha52')
 
 def alpha53(data: pd.DataFrame) -> pd.Series:
     """
@@ -630,8 +728,7 @@ def alpha70(data: pd.DataFrame) -> pd.Series:
     """
     Alpha70 = STD(AMOUNT, 6)
     """
-    # TODO: 开发中
-    pass
+    return(STD(data['amount'], 6)).rename('Alpha70')
 
 
 def alpha71(data: pd.DataFrame) -> pd.Series:
@@ -690,8 +787,11 @@ def alpha76(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: 开发中
-    pass
+    prev_close_1d = DELAY(data['close'], 1)
+    return(
+        STD(ABS((data['close'] / prev_close_1d) - 1) / data['volume'], 20)
+        / MEAN(ABS((data['close'] / prev_close_1d) - 1) / data['volume'], 20)
+    ).rename('Alpha76')
 
 
 def alpha79(data: pd.DataFrame) -> pd.Series:
@@ -754,6 +854,20 @@ def alpha82(data: pd.DataFrame) -> pd.Series:
     return(
         SMA(max_close_change / max_change * 100, 20, 1)
     ).rename('Alpha82')
+
+
+def alpha83(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha83 = -RANK(
+        COVIANCE(
+            RANK(HIGH),
+            RANK(VOLUME),
+            5,
+        )
+    )
+    """
+    # TODO: Developing
+    pass
 
 
 def alpha84(data: pd.DataFrame) -> pd.Series:
@@ -892,8 +1006,7 @@ def alpha95(data: pd.DataFrame) -> pd.Series:
     """
     Alpha95 = STD(AMOUNT, 20)
     """
-    # TODO: 开发中
-    pass
+    return(STD(data['amount'], 20)).rename('Alpha95')
 
 
 def alpha96(data: pd.DataFrame) -> pd.Series:
@@ -930,16 +1043,14 @@ def alpha97(data: pd.DataFrame) -> pd.Series:
     """
     Alpha97 = STD(VOLUME, 10)
     """
-    # TODO: 开发中
-    pass
+    return(STD(data['volume'], 10)).rename('Alpha97')
 
 
 def alpha100(data: pd.DataFrame) -> pd.Series:
     """
     Alpha100 = STD(VOLUME, 20)
     """
-    # TODO: 开发中
-    pass
+    return(STD(data['volume'], 20)).rename('Alpha100')
 
 
 def alpha102(data: pd.DataFrame) -> pd.Series:
@@ -1074,8 +1185,12 @@ def alpha117(data: pd.DataFrame) -> pd.Series:
         * (1 - TSRANK(RET, 32))
     )
     """
-    # TODO: 开发中
-    pass
+    order_volume_32d = TSRANK(data['volume'], 32)
+    return(
+        order_volume_32d
+        * (1 - TSRANK(data['close'] + data['high'] - data['low'], 16))
+        * (1 - TSRANK(RET(data['close']), 32))
+    ).rename('Alpha117')
 
 
 def alpha118(data: pd.DataFrame) -> pd.Series:
@@ -1124,7 +1239,7 @@ def alpha122(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: 开发中
+    # TODO: Developing
     pass
 
 
@@ -1156,8 +1271,7 @@ def alpha132(data: pd.DataFrame) -> pd.Series:
     """
     Alpha132 = MEAN(AMOUNT, 20)
     """
-    # TODO: 开发中
-    pass
+    return(MEAN(data['amount'], 20)).rename('Alpha132')
 
 
 def alpha133(data: pd.DataFrame) -> pd.Series:
@@ -1171,7 +1285,7 @@ def alpha133(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    # TODO: 开发中
+    # TODO: Developing
     pass
 
 
@@ -1213,6 +1327,21 @@ def alpha139(data: pd.DataFrame) -> pd.Series:
     return(
         -CORR(data['open'], data['volume'], 10)
     ).rename('Alpha139')
+
+
+def alpha144(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha144 = (
+        SUMIF(
+            ABS(CLOSE / DELAY(CLOSE, 1) - 1) / AMOUNT,
+            20,
+            CLOSE < DELAY(CLOSE, 1),
+        )
+        / COUNT(CLOSE < DELAY(CLOSE, 1), 20)
+    )
+    """
+    # TODO: Developing
+    pass
 
 
 def alpha145(data: pd.DataFrame) -> pd.Series:
@@ -1316,6 +1445,37 @@ def alpha153(data: pd.DataFrame) -> pd.Series:
         (avg_close_3 + avg_close_6 + avg_close_12 + avg_close_24)
         / 4
     ).rename('Alpha153')
+
+
+def alpha154(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha154 = (
+        VWAP - TSMIN(VWAP, 16)
+        < CORR(VWAP, MEAN(VOLUME, 180), 18)
+    )
+    """
+    vwap_distance_from_min = (
+        data['vwap']
+        - TSMIN(data['vwap'], 16)
+    )
+    vwap_volume_correlation = CORR(
+        data['vwap'],
+        MEAN(data['volume'], 180),
+        18,
+    )
+    has_required_history = (
+        vwap_distance_from_min.notna()
+        & vwap_volume_correlation.notna()
+    )
+
+    result = (
+        vwap_distance_from_min
+        < vwap_volume_correlation
+    ).astype(float)
+
+    return result.where(
+        has_required_history,
+    ).rename('Alpha154')
 
 
 def alpha155(data: pd.DataFrame) -> pd.Series:
@@ -1559,6 +1719,52 @@ def alpha178(data: pd.DataFrame) -> pd.Series:
     ).rename('Alpha178')
 
 
+def alpha180(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha180 = (
+        MEAN(VOLUME, 20) < VOLUME
+        ? (
+            -TSRANK(ABS(DELTA(CLOSE, 7)), 60)
+            * SIGN(DELTA(CLOSE, 7))
+        )
+        : -VOLUME
+    )
+    """
+    # TODO: Developing
+    pass
+
+
+def alpha182(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha182 = (
+        COUNT(
+            (
+                CLOSE > OPEN
+                & BANCHMARKINDEXCLOSE > BANCHMARKINDEXOPEN
+            )
+            OR (
+                CLOSE < OPEN
+                & BANCHMARKINDEXCLOSE < BANCHMARKINDEXOPEN
+            ),
+            20,
+        )
+        / 20
+    )
+    """
+    # TODO: Developing
+    pass
+
+
+def alpha185(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha185 = RANK(
+        -1 * (1 - OPEN / CLOSE) ^ 2
+    )
+    """
+    # TODO: Developing
+    pass
+
+
 def alpha187(data: pd.DataFrame) -> pd.Series:
     """
     Alpha187 = SUM(
@@ -1622,11 +1828,13 @@ FACTORS = {
     "Alpha5": alpha5,
     "Alpha9": alpha9,
     "Alpha11": alpha11,
+    "Alpha13": alpha13,
     "Alpha14": alpha14,
     "Alpha15": alpha15,
     "Alpha18": alpha18,
     "Alpha20": alpha20,
     "Alpha24": alpha24,
+    "Alpha26": alpha26,
     "Alpha29": alpha29,
     "Alpha31": alpha31,
     "Alpha34": alpha34,
@@ -1657,6 +1865,7 @@ FACTORS = {
     "Alpha89": alpha89,
     "Alpha93": alpha93,
     "Alpha96": alpha96,
+    "Alpha97": alpha97,
     "Alpha102": alpha102,
     "Alpha106": alpha106,
     "Alpha109": alpha109,
@@ -1672,6 +1881,7 @@ FACTORS = {
     "Alpha151": alpha151,
     "Alpha152": alpha152,
     "Alpha153": alpha153,
+    "Alpha154": alpha154,
     "Alpha155": alpha155,
     "Alpha158": alpha158,
     "Alpha161": alpha161,

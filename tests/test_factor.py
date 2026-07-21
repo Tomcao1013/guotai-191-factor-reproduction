@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 import factor
-from factor import FACTORS, alpha2, alpha110, calculate_factors
+from factor import FACTORS, alpha2, alpha52, alpha110, alpha117, calculate_factors
 
 
 REQUESTED_FACTORS = [
@@ -60,6 +60,7 @@ def test_calculate_factors_adds_registered_factors_without_mutating_input():
             "high": [12.0, 13.0],
             "low": [8.0, 9.0],
             "close": [11.0, 10.0],
+            "vwap": [10.5, 10.5],
             "volume": [1000.0, 1200.0],
         }
     )
@@ -99,6 +100,39 @@ def test_alpha110_sums_only_positive_price_excursions():
     expected_last_value = 19.0 / 110.0 * 100
     assert result.first_valid_index() == 20
     assert result.iloc[-1] == pytest.approx(expected_last_value)
+
+
+def test_alpha52_uses_positive_up_and_down_pressures():
+    rows = 28
+    close = [10.0 + (index % 2) for index in range(rows)]
+    data = pd.DataFrame(
+        {
+            "high": [value + 1.0 for value in close],
+            "low": [value - 1.0 for value in close],
+            "close": close,
+        }
+    )
+
+    result = alpha52(data)
+
+    assert result.first_valid_index() == 26
+    assert result.iloc[-1] == pytest.approx(100.0)
+
+
+def test_alpha117_accepts_close_series_for_returns():
+    rows = 34
+    data = pd.DataFrame(
+        {
+            "high": [12.0 + index for index in range(rows)],
+            "low": [9.0 + index for index in range(rows)],
+            "close": [10.0 + index for index in range(rows)],
+            "volume": [100.0 + index for index in range(rows)],
+        }
+    )
+
+    result = alpha117(data)
+
+    assert result.notna().iloc[-1]
 
 
 def test_calculate_factors_uses_registered_factor(monkeypatch):

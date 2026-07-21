@@ -3,30 +3,11 @@ from pathlib import Path
 import akshare as ak
 import pandas as pd
 
+from research_stocks import RESEARCH_UNIVERSE
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-RESEARCH_UNIVERSE = (
-    "sz000001",
-    "sz000333",
-    "sz000858",
-    "sz002027",
-    "sz002230",
-    "sz002415",
-    "sz002594",
-    "sz002714",
-    "sz300015",
-    "sz300124",
-    "sz300750",
-    "sh600030",
-    "sh600050",
-    "sh600276",
-    "sh600309",
-    "sh600900",
-    "sh601088",
-    "sh601318",
-    "sh601668",
-    "sh688008",
-)
+
 
 def main() -> None:
     start_date = pd.Timestamp("2021-07-19")
@@ -42,16 +23,68 @@ def main() -> None:
 
         output_path = price_dir / f"{code}_{market}_5y_daily.csv"
 
-        data = ak.stock_zh_a_daily(
+        # 1. 获取前复权价格
+        qfq_data = ak.stock_zh_a_daily(
             symbol=symbol,
             start_date=start_date.strftime("%Y%m%d"),
             end_date=end_date.strftime("%Y%m%d"),
             adjust="qfq",
         )
 
-        data = data.rename(columns={"date": "trade_date"})
-        data["trade_date"] = pd.to_datetime(data["trade_date"])
+        # 2. 获取未复权价格和真实成交数据
+        raw_data = ak.stock_zh_a_daily(
+            symbol=symbol,
+            start_date=start_date.strftime("%Y%m%d"),
+            end_date=end_date.strftime("%Y%m%d"),
+            adjust="",
+        )
+
+        qfq_data = qfq_data.rename(columns={"date": "trade_date"})
+
+        raw_data = raw_data.rename(
+            columns={
+                "date": "trade_date",
+                "close": "close_raw",
+                "volume": "volume_raw",
+                "amount": "amount_raw",
+            }
+        )
+
+        qfq_data["trade_date"] = pd.to_datetime(qfq_data["trade_date"])
+        raw_data["trade_date"] = pd.to_datetime(raw_data["trade_date"])
+
+        # 3. 按交易日合并
+        data = qfq_data.merge(
+            raw_data[
+                [
+                    "trade_date",
+                    "close_raw",
+                    "volume_raw",
+                    "amount_raw",
+                ]
+            ],
+            on="trade_date",
+            how="inner",
+        )
+
         data["trade_symbol"] = trade_symbol
+
+        # 4. 未复权 VWAP：成交额 / 成交股数
+        data["vwap_raw"] = data["amount_raw"].div(
+            data["volume_raw"].where(data["volume_raw"] > 0)
+        )
+
+        # 5. 计算每日前复权比例
+        data["qfq_ratio"] = data["close"].div(
+            data["close_raw"].where(data["close_raw"] != 0)
+        )
+
+        # 6. 将 VWAP 调整到前复权价格尺度
+        data["vwap"] = data["vwap_raw"] * data["qfq_ratio"]
+
+        # 使用真实成交量和成交额
+        data["volume"] = data["volume_raw"]
+        data["amount"] = data["amount_raw"]
 
         data = (
             data[
@@ -62,10 +95,12 @@ def main() -> None:
                     "high",
                     "low",
                     "close",
+                    "vwap",
                     "volume",
                     "amount",
                 ]
             ]
+            .replace([float("inf"), float("-inf")], pd.NA)
             .dropna()
             .drop_duplicates(subset="trade_date")
             .sort_values("trade_date")
@@ -79,6 +114,7 @@ def main() -> None:
         )
 
         print(f"{trade_symbol}: 已保存 {len(data)} 行到 {output_path}")
+
 
 if __name__ == "__main__":
     main()
