@@ -1,6 +1,16 @@
+import numpy as np
 import pandas as pd
 
-from factor_operators import COUNT, DELTA
+from factor_operators import ABS, COUNT, DELTA
+
+
+def test_abs_returns_elementwise_absolute_values():
+    series = pd.Series([-2.0, 0.0, 3.5, np.nan])
+
+    result = ABS(series)
+
+    expected = pd.Series([2.0, 0.0, 3.5, np.nan])
+    pd.testing.assert_series_equal(result, expected)
 
 
 def test_delta_subtracts_the_lagged_series():

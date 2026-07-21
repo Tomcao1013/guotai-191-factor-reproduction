@@ -1,5 +1,5 @@
 import pandas as pd
-
+import numpy as np
 
 def DELTA(series: pd.Series, periods: int = 1) -> pd.Series:
     return series - series.shift(periods)
@@ -10,9 +10,11 @@ def SUM(series: pd.Series, periods: int = 1) -> pd.Series:
 def DELAY(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.shift(periods)
 
+def ABS(series: pd.Series) -> pd.Series:
+    return series.abs()
+
 def TSMAX(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods).max()
-
 
 def TSMIN(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods).min()
@@ -51,3 +53,9 @@ def MEAN(series: pd.Series, periods: int = 1) -> pd.Series:
 
 def COUNT(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods, min_periods=periods).sum()
+
+def MAX(value1: pd.Series | int | float, value2: pd.Series | int | float,) -> pd.Series:
+    return np.maximum(value1, value2)
+
+def MIN(value1: pd.Series | int | float, value2: pd.Series | int | float,) -> pd.Series:
+    return np.minimum(value1, value2)

@@ -65,7 +65,7 @@ def alpha5(data: pd.DataFrame) -> pd.Series:
     )
     """
     price_volume_corr = CORR(TSRANK(data['volume'], 5), TSRANK(data['high'], 5), 5)
-    return (-TSMAX(price_volume_corr, 3)).rename('alpha5')
+    return (-TSMAX(price_volume_corr, 3)).rename('Alpha5')
 
 
 def alpha9(data: pd.DataFrame) -> pd.Series:
@@ -136,6 +136,31 @@ def alpha15(data: pd.DataFrame) -> pd.Series:
     return(data['open'] / DELAY(data['close'], 1) - 1).rename('Alpha15')
 
 
+def alpha18(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha18 = CLOSE / DELAY(CLOSE, 5)
+    """
+    previous_5_close = DELAY(data['close'], 5)
+    return (data['close'] / previous_5_close).rename('Alpha18')
+
+
+def alpha19(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha19 = (
+        CLOSE < DELAY(CLOSE, 5)
+        ? (CLOSE - DELAY(CLOSE, 5)) / DELAY(CLOSE, 5)
+        : (
+            CLOSE == DELAY(CLOSE, 5)
+            ? 0
+            : (CLOSE - DELAY(CLOSE, 5)) / CLOSE
+        )
+    )
+    """
+    # TODO: Implement the conditional branches with the formula's
+    # different denominators for the down and non-down cases.
+    pass
+
+
 def alpha20(data: pd.DataFrame) -> pd.Series:
     """
     Alpha20 = (
@@ -147,6 +172,24 @@ def alpha20(data: pd.DataFrame) -> pd.Series:
     change_in_6 = data['close'] - DELAY(data['close'], 6)
     change_in_6_pct = change_in_6 / DELAY(data['close'], 6) * 100
     return(change_in_6_pct).rename('Alpha20')
+
+
+def alpha24(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha24 = SMA(
+        CLOSE - DELAY(CLOSE, 5),
+        5,
+        1,
+    )
+    """
+    previous_5_close = DELAY(data['close'], 5)
+    return(
+        SMA(
+            data['close'] - previous_5_close,
+            5,
+            1,
+        )
+    ).rename('Alpha24')
 
 
 def alpha29(data: pd.DataFrame) -> pd.Series:
@@ -172,6 +215,28 @@ def alpha31(data: pd.DataFrame) -> pd.Series:
     mean_close = MEAN(data['close'], 12)
     deviation = (data["close"] - mean_close) / mean_close
     return(deviation * 100).rename('Alpha31')
+
+
+def alpha34(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha34 = MEAN(CLOSE, 12) / CLOSE
+    """
+    return(
+        MEAN(data['close'], 12) / data['close']
+    ).rename('Alpha34')
+
+
+def alpha38(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha38 = (
+        SUM(HIGH, 20) / 20 < HIGH
+        ? -DELTA(HIGH, 2)
+        : 0
+    )
+    """
+    # TODO: Implement the 20-period HIGH mean threshold and the
+    # conditional negative two-period HIGH delta.
+    pass
 
 
 def alpha40(data: pd.DataFrame) -> pd.Series:
@@ -241,6 +306,55 @@ def alpha46(data: pd.DataFrame) -> pd.Series:
     means = MEAN(data['close'], 3) + MEAN(data['close'], 6) + MEAN(data['close'], 12)+ MEAN(data['close'], 24)
     return(means / (4 * data['close'])).rename('Alpha46')
 
+
+def alpha47(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha47 = SMA(
+        (TSMAX(HIGH, 6) - CLOSE)
+        / (TSMAX(HIGH, 6) - TSMIN(LOW, 6))
+        * 100,
+        9,
+        1,
+    )
+    """
+    high_6d_max = TSMAX(data['high'], 6)
+    high_6d_minus_close = high_6d_max - data['close']
+    low_6d_min = TSMIN(data['low'], 6)
+    max_minus_min_6d = high_6d_max - low_6d_min
+    return(
+        SMA(
+            high_6d_minus_close / max_minus_min_6d * 100,
+            9,
+            1,
+        )
+    ).rename('Alpha47')
+
+
+
+def alpha52(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha52 = (
+        SUM(
+            MAX(
+                0,
+                HIGH - DELAY((HIGH + LOW + CLOSE) / 3, 1),
+            ),
+            26,
+        )
+        / SUM(
+            MAX(
+                0,
+                DELAY((HIGH + LOW + CLOSE) / 3, 1) - LOW,
+            ),
+            26,
+        )
+        * 100
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
 def alpha53(data: pd.DataFrame) -> pd.Series:
     """
     Alpha53 = COUNT(CLOSE > DELAY(CLOSE, 1), 12) / 12 * 100
@@ -248,6 +362,80 @@ def alpha53(data: pd.DataFrame) -> pd.Series:
     previous_close = DELAY(data["close"], 1)
     condition = (data["close"] > previous_close).where(previous_close.notna())
     return (COUNT(condition, periods=12) / 12 * 100).rename("Alpha53")
+
+
+def alpha57(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha57 = SMA(
+        (CLOSE - TSMIN(LOW, 9))
+        / (TSMAX(HIGH, 9) - TSMIN(LOW, 9))
+        * 100,
+        3,
+        1,
+    )
+    """
+    min_low_9d = TSMIN(data['low'], 9)
+    close_minus_min_low = data['close'] - min_low_9d
+
+    max_high_9d = TSMAX(data['high'], 9)
+    max_minus_min = max_high_9d - min_low_9d
+
+    return(
+        SMA(
+            close_minus_min_low / max_minus_min * 100,
+            3,
+            1
+        )
+    ).rename('Alpha57')
+
+
+def alpha58(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha58 = COUNT(CLOSE > DELAY(CLOSE, 1), 20) / 20 * 100
+    """
+    previous_close = DELAY(data["close"], 1)
+    condition = (data["close"] > previous_close).where(previous_close.notna())
+    return (COUNT(condition, periods=20) / 20 * 100).rename("Alpha58")
+
+
+def alpha59(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha59 = SUM(
+        CLOSE == DELAY(CLOSE, 1)
+        ? 0
+        : CLOSE - (
+            CLOSE > DELAY(CLOSE, 1)
+            ? MIN(LOW, DELAY(CLOSE, 1))
+            : MAX(HIGH, DELAY(CLOSE, 1))
+        ),
+        20,
+    )
+    """
+    previous_close = DELAY(data["close"], 1)
+    has_previous = previous_close.notna()
+
+    is_up = data["close"] > previous_close
+    is_down = data["close"] < previous_close
+
+    daily_value = pd.Series(
+        0.0,
+        index=data.index,
+    )
+
+    daily_value = daily_value.mask(
+        is_up,
+        data["close"] - np.minimum(data["low"], previous_close),
+    )
+
+    daily_value = daily_value.mask(
+        is_down,
+        data["close"] - np.maximum(data["high"], previous_close),
+    )
+
+    daily_value = daily_value.where(has_previous)
+
+    return SUM(daily_value, periods=20).rename("Alpha59")
+
 
 def alpha60(data: pd.DataFrame) -> pd.Series:
     """
@@ -263,6 +451,90 @@ def alpha60(data: pd.DataFrame) -> pd.Series:
     range = (data['high'] - data['low']).replace(0, np.nan) #极差
     weighted_clv = ((tail - head) / range) * data['volume']
     return SUM(weighted_clv, 20).rename('Alpha60')
+
+
+def alpha63(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha63 = (
+        SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 6, 1)
+        / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 6, 1)
+        * 100
+    )
+    """
+    prev_close = DELAY(data['close'], 1)
+    close_change = data['close'] - prev_close
+
+    positive_close_change = MAX(data['close'] - prev_close, 0)
+    abs_close_change = ABS(close_change)
+
+    return(
+        SMA(positive_close_change, 6, 1)
+        / SMA(abs_close_change, 6, 1)
+        * 100
+    ).rename('Alpha63')
+
+
+
+def alpha65(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha65 = MEAN(CLOSE, 6) / CLOSE
+    """
+    return(MEAN(data['close'], 6) / data['close']).rename('Alpha65')
+
+
+def alpha66(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha66 = (
+        (CLOSE - MEAN(CLOSE, 6))
+        / MEAN(CLOSE, 6)
+        * 100
+    )
+    """
+    avg_close_6 = MEAN(data['close'], 6)
+    return(
+        (data['close'] - avg_close_6)
+        / avg_close_6
+        * 100
+    ).rename('Alpha66')
+
+
+def alpha67(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha67 = (
+        SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 24, 1)
+        / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 24, 1)
+        * 100
+    )
+    """
+    prev_close = DELAY(data['close'], 1)
+    close_change = data['close'] - prev_close
+
+    positive_close_change = MAX(data['close'] - prev_close, 0)
+    abs_close_change = ABS(close_change)
+
+    return(
+        SMA(positive_close_change, 24, 1)
+        / SMA(abs_close_change, 24, 1)
+        * 100
+    ).rename('Alpha67')
+
+
+def alpha68(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha68 = SMA(
+        (
+            (HIGH + LOW) / 2
+            - (DELAY(HIGH, 1) + DELAY(LOW, 1)) / 2
+        )
+        * (HIGH - LOW)
+        / VOLUME,
+        15,
+        2,
+    )
+    """
+    change = (data['high'] + data['low']) / 2
+    delay_change = -DELAY(data['high'] + data['low']) / 2
+    return SMA((change + delay_change) * (data['high'] - data['low']) / data['volume'], 15, 2).rename('Alpha68')
 
 
 def alpha69(data: pd.DataFrame) -> pd.Series:
@@ -353,6 +625,96 @@ def alpha69(data: pd.DataFrame) -> pd.Series:
 
     return result.rename("Alpha69")
 
+
+def alpha70(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha70 = STD(AMOUNT, 6)
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha71(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha71 = (
+        (CLOSE - MEAN(CLOSE, 24))
+        / MEAN(CLOSE, 24)
+        * 100
+    )
+    """
+    avg_close_24 = MEAN(data['close'], 24)
+    return(
+        (data['close'] - avg_close_24)
+        / avg_close_24
+        * 100
+    ).rename('Alpha71')
+
+
+def alpha72(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha72 = SMA(
+        (TSMAX(HIGH, 6) - CLOSE)
+        / (TSMAX(HIGH, 6) - TSMIN(LOW, 6))
+        * 100,
+        15,
+        1,
+    )
+    """
+    max_high_6d = TSMAX(data['high'], 6)
+    max_high_minus_close = max_high_6d - data['close']
+
+    min_low_6d = TSMIN(data['low'], 6)
+    max_minus_min = max_high_6d - min_low_6d
+
+    return(
+        SMA(
+            max_high_minus_close / max_minus_min * 100,
+            15,
+            1
+        )
+    ).rename('Alpha72')
+
+
+
+
+def alpha76(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha76 = (
+        STD(
+            ABS(CLOSE / DELAY(CLOSE, 1) - 1) / VOLUME,
+            20,
+        )
+        / MEAN(
+            ABS(CLOSE / DELAY(CLOSE, 1) - 1) / VOLUME,
+            20,
+        )
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha79(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha79 = (
+        SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 12, 1)
+        / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 12, 1)
+        * 100
+    )
+    """
+    prev_close = DELAY(data['close'], 1)
+    close_change = data['close'] - prev_close
+
+    positive_close_change = MAX(data['close'] - prev_close, 0)
+    abs_close_change = ABS(close_change)
+
+    return(
+        SMA(positive_close_change, 12, 1)
+        / SMA(abs_close_change, 12, 1)
+        * 100
+    ).rename('Alpha79')
+
+
 def alpha80(data: pd.DataFrame) -> pd.Series:
     """
     Alpha80 = (
@@ -364,6 +726,34 @@ def alpha80(data: pd.DataFrame) -> pd.Series:
     return((data['volume'] - DELAY(data['volume'], 5))
            / DELAY(data['volume'], 5)
            * 100).rename('Alpha80')
+
+
+def alpha81(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha81 = SMA(VOLUME, 21, 2)
+    """
+    return(SMA(data['volume'], 21, 2)).rename('Alpha81')
+
+
+def alpha82(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha82 = SMA(
+        (TSMAX(HIGH, 6) - CLOSE)
+        / (TSMAX(HIGH, 6) - TSMIN(LOW, 6))
+        * 100,
+        20,
+        1,
+    )
+    """
+    max_high_6d = TSMAX(data['high'], 6)
+    max_close_change = max_high_6d - data['close']
+
+    min_low_6d = TSMIN(data['low'], 6)
+    max_change = max_high_6d - min_low_6d
+
+    return(
+        SMA(max_close_change / max_change * 100, 20, 1)
+    ).rename('Alpha82')
 
 
 def alpha84(data: pd.DataFrame) -> pd.Series:
@@ -380,11 +770,667 @@ def alpha84(data: pd.DataFrame) -> pd.Series:
     )
     """
     previous_close = DELAY(data["close"], 1)
-    price_change = data["close"] - previous_close
-    dir_volume = np.sign(price_change) * data["volume"]
+    has_previous = previous_close.notna()
 
-    result = SUM(dir_volume, periods=20)
-    return result.rename("Alpha84")
+    signed_volume = pd.Series(0.0, index=data.index)
+
+    signed_volume = signed_volume.mask(
+        data["close"] > previous_close,
+        data["volume"],
+    )
+    signed_volume = signed_volume.mask(
+        data["close"] < previous_close,
+        -data["volume"],
+    )
+
+    signed_volume = signed_volume.where(has_previous)
+
+    return SUM(signed_volume, periods=20).rename("Alpha84")
+
+
+def alpha85(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha85 = (
+        TSRANK(VOLUME / MEAN(VOLUME, 20), 20)
+        * TSRANK(-DELTA(CLOSE, 7), 8)
+    )
+    """
+    avg_volume_20d = MEAN(data['volume'], 20)
+    prev_close_7d = -DELTA(data['close'], 7)
+    return(
+        TSRANK(data['volume'] / avg_volume_20d, 20)
+        * TSRANK(prev_close_7d, 8)
+    ).rename('Alpha85')
+
+
+def alpha88(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha88 = (
+        (CLOSE - DELAY(CLOSE, 20))
+        / DELAY(CLOSE, 20)
+        * 100
+    )
+    """
+    pre_close_20 = DELAY(data["close"], 20)
+
+    return (
+        (data["close"] - pre_close_20)
+        / pre_close_20
+        * 100
+    ).rename("Alpha88")
+
+
+def alpha89(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha89 = 2 * (
+        SMA(CLOSE, 13, 2)
+        - SMA(CLOSE, 27, 2)
+        - SMA(
+            SMA(CLOSE, 13, 2) - SMA(CLOSE, 27, 2),
+            10,
+            2,
+        )
+    )
+    """
+    sma_close_13d = SMA(data['close'], 13, 2)
+    sma_close_27d = SMA(data['close'], 27, 2)
+    sma_change = sma_close_13d - sma_close_27d
+
+    return(
+        2 *
+        (
+            sma_close_13d - sma_close_27d - SMA(sma_change, 10, 2)
+        )
+    ).rename('Alpha89')
+
+
+
+def alpha93(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha93 = SUM(
+        OPEN >= DELAY(OPEN, 1)
+        ? 0
+        : MAX(OPEN - LOW, OPEN - DELAY(OPEN, 1)),
+        20,
+    )
+    """
+    previous_open = DELAY(data['open'], 1)
+    is_flat_or_up = data['open'] >= previous_open
+
+    max_down= np.maximum(
+        data['open'] - data['low'],
+        data['open'] - previous_open
+    )
+
+    term = pd.Series(
+        np.where(is_flat_or_up, 0, max_down,),
+        index=data.index
+    )
+
+    return(SUM(term, 20)).rename('Alpha93')
+
+
+def alpha94(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha94 = SUM(
+        CLOSE > DELAY(CLOSE, 1)
+        ? VOLUME
+        : (
+            CLOSE < DELAY(CLOSE, 1)
+            ? -VOLUME
+            : 0
+        ),
+        30,
+    )
+    """
+    # TODO: Implement signed volume (+VOLUME/-VOLUME/0) with a
+    # 30-period rolling sum.
+    pass
+
+
+def alpha95(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha95 = STD(AMOUNT, 20)
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha96(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha96 = SMA(
+        SMA(
+            (CLOSE - TSMIN(LOW, 9))
+            / (TSMAX(HIGH, 9) - TSMIN(LOW, 9))
+            * 100,
+            3,
+            1,
+        ),
+        3,
+        1,
+    )
+    """
+    min_low_9d = TSMIN(data['low'], 9)
+    max_high_9d = TSMAX(data['high'], 9)
+    max_change = max_high_9d - min_low_9d
+    close_9d_pos = (
+        (data['close'] - min_low_9d)
+        / max_change
+        * 100
+    )
+
+    return(SMA(
+        SMA(close_9d_pos, 3, 1),
+        3,
+        1
+    )).rename('Alpha96')
+
+
+def alpha97(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha97 = STD(VOLUME, 10)
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha100(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha100 = STD(VOLUME, 20)
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha102(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha102 = (
+        SMA(MAX(VOLUME - DELAY(VOLUME, 1), 0), 6, 1)
+        / SMA(ABS(VOLUME - DELAY(VOLUME, 1)), 6, 1)
+        * 100
+    )
+    """
+    prev_volume_1d = DELAY(data['volume'], 1)
+    positive_volume_change = MAX(data['volume'] - prev_volume_1d, 0)
+    abs_volume_change = ABS(data['volume'] - prev_volume_1d)
+
+    return(
+        SMA(positive_volume_change, 6, 1)
+        / SMA(abs_volume_change, 6, 1)
+        * 100
+    ).rename('Alpha102')
+
+
+def alpha103(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha103 = (
+        (20 - LOWDAY(LOW, 20))
+        / 20
+        * 100
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha106(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha106 = CLOSE - DELAY(CLOSE, 20)
+    """
+    previous_close_20 = DELAY(data['close'], 20)
+    return(
+        data['close'] - previous_close_20
+    ).rename('Alpha106')
+
+
+def alpha109(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha109 = (
+        SMA(HIGH - LOW, 10, 2)
+        / SMA(SMA(HIGH - LOW, 10, 2), 10, 2)
+    )
+    """
+    change = data['high'] - data['low']
+    sma_change = SMA(change, 10, 2)
+    return(
+        sma_change / SMA(sma_change, 10, 2)
+    ).rename('Alpha109')
+
+
+def alpha110(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha110 = (
+        SUM(MAX(0, HIGH - DELAY(CLOSE, 1)), 20)
+        / SUM(MAX(0, DELAY(CLOSE, 1) - LOW), 20)
+        * 100
+    )
+    """
+    previous_close = DELAY(data['close'], 1)
+    upside_excursion = data['high'] - previous_close
+    downside_excursion = previous_close - data['low']
+
+    positive_upside_excursion = MAX(0, upside_excursion)
+    positive_downside_excursion = MAX(0, downside_excursion)
+
+    upside_pressure_20d = SUM(
+        positive_upside_excursion,
+        periods=20,
+    )
+
+    downside_pressure_20d = SUM(
+        positive_downside_excursion,
+        periods=20,
+    ).replace(0, np.nan)
+
+    bull_bear_pressure_ratio = (
+        upside_pressure_20d
+        / downside_pressure_20d
+        * 100
+    )
+
+    return bull_bear_pressure_ratio.rename("Alpha110")
+
+
+def alpha111(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha111 = (
+        SMA(
+            VOLUME
+            * ((CLOSE - LOW) - (HIGH - CLOSE))
+            / (HIGH - LOW),
+            11,
+            2,
+        )
+        - SMA(
+            VOLUME
+            * ((CLOSE - LOW) - (HIGH - CLOSE))
+            / (HIGH - LOW),
+            4,
+            2,
+        )
+    )
+    """
+    price_change = data['high'] - data['low']
+    close_location = (
+        (data['close'] - data['low'])
+        - (data['high'] - data['close'])
+    ) / price_change
+
+    volume_weited_close_location = (
+        data['volume'] * close_location
+    )
+
+    slow = SMA(volume_weited_close_location, 11, 2)
+    fast = SMA(volume_weited_close_location, 4, 2)
+
+    return(slow - fast).rename('Alpha111')
+
+
+def alpha117(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha117 = (
+        TSRANK(VOLUME, 32)
+        * (1 - TSRANK(CLOSE + HIGH - LOW, 16))
+        * (1 - TSRANK(RET, 32))
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha118(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha118 = (
+        SUM(HIGH - OPEN, 20)
+        / SUM(OPEN - LOW, 20)
+        * 100
+    )
+    """
+    increase = data['high'] - data['open']
+    decrease = data['open'] - data['low']
+
+    return(
+        SUM(increase, 20)
+        / SUM(decrease, 20)
+        * 100
+    ).rename('Alpha118')
+
+
+def alpha122(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha122 = (
+        (
+            SMA(
+                SMA(SMA(LOG(CLOSE), 13, 2), 13, 2),
+                13,
+                2,
+            )
+            - DELAY(
+                SMA(
+                    SMA(SMA(LOG(CLOSE), 13, 2), 13, 2),
+                    13,
+                    2,
+                ),
+                1,
+            )
+        )
+        / DELAY(
+            SMA(
+                SMA(SMA(LOG(CLOSE), 13, 2), 13, 2),
+                13,
+                2,
+            ),
+            1,
+        )
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha126(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha126 = (CLOSE + HIGH + LOW) / 3
+    """
+    return(
+        (data['close'] + data['high'] + data['low'])
+        / 3
+    ).rename('Alpha126')
+
+
+def alpha129(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha129 = SUM(
+        CLOSE - DELAY(CLOSE, 1) < 0
+        ? ABS(CLOSE - DELAY(CLOSE, 1))
+        : 0,
+        12,
+    )
+    """
+    # TODO: Implement the 12-period sum of absolute negative close
+    # changes.
+    pass
+
+
+def alpha132(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha132 = MEAN(AMOUNT, 20)
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha133(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha133 = (
+        (20 - HIGHDAY(HIGH, 20))
+        / 20
+        * 100
+        - (20 - LOWDAY(LOW, 20))
+        / 20
+        * 100
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha134(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha134 = (
+        (CLOSE - DELAY(CLOSE, 12))
+        / DELAY(CLOSE, 12)
+        * VOLUME
+    )
+    """
+    previous_close_12 = DELAY(data['close'], 12)
+    return(
+        (data['close'] - previous_close_12)
+        / previous_close_12
+        * data['volume']
+    ).rename('Alpha134')
+
+
+def alpha135(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha135 = SMA(
+        DELAY(CLOSE / DELAY(CLOSE, 20), 1),
+        20,
+        1,
+    )
+    """
+    prev_close_20d = DELAY(data['close'], 20)
+    close_change_pct = data['close'] / prev_close_20d
+    prev_close_change_pct = DELAY(close_change_pct, 1)
+
+    return(SMA(prev_close_change_pct, 20, 1)).rename('Alpha135')
+
+
+def alpha139(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha139 = -CORR(OPEN, VOLUME, 10)
+    """
+    return(
+        -CORR(data['open'], data['volume'], 10)
+    ).rename('Alpha139')
+
+
+def alpha145(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha145 = (
+        (MEAN(VOLUME, 9) - MEAN(VOLUME, 26))
+        / MEAN(VOLUME, 12)
+        * 100
+    )
+    """
+    avg_volume_9 = MEAN(data['volume'], 9)
+    avg_volume_12 = MEAN(data['volume'], 12)
+    avg_volume_26 = MEAN(data['volume'], 26)
+    return(
+        (avg_volume_9 - avg_volume_26)
+        / avg_volume_12
+        *100
+    ).rename('Alpha145')
+
+
+def alpha150(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha150 = (
+        (CLOSE + HIGH + LOW)
+        / 3
+        * VOLUME
+    )
+    """
+    return(
+        (data['close'] + data['high'] + data['low'])
+        / 3
+        * data['volume']
+    ).rename('Alpha150')
+
+
+
+def alpha151(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha151 = SMA(
+        CLOSE - DELAY(CLOSE, 20),
+        20,
+        1,
+    )
+    """
+    previous_close_20 = DELAY(data['close'], 20)
+    return(SMA(
+        data['close'] - previous_close_20,
+        20,
+        1,
+    )).rename('Alpha151')
+
+
+def alpha152(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha152 = SMA(
+        MEAN(
+            DELAY(
+                SMA(DELAY(CLOSE / DELAY(CLOSE, 9), 1), 9, 1),
+                1,
+            ),
+            12,
+        )
+        - MEAN(
+            DELAY(
+                SMA(DELAY(CLOSE / DELAY(CLOSE, 9), 1), 9, 1),
+                1,
+            ),
+            26,
+        ),
+        9,
+        1,
+    )
+    """
+    prev_close_9d = DELAY(data['close'], 9)
+    close_change_9d = data['close'] / prev_close_9d
+    sma = SMA(DELAY(close_change_9d, 1), 9, 1)
+    prev_sma_1d = DELAY(sma, 1)
+    avg_sma_12d = MEAN(prev_sma_1d, 12)
+    avg_sma_26d = MEAN(prev_sma_1d, 26)
+    return(SMA(
+        avg_sma_12d - avg_sma_26d,
+        9,
+        1
+    )).rename('Alpha152')
+
+
+def alpha153(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha153 = (
+        MEAN(CLOSE, 3)
+        + MEAN(CLOSE, 6)
+        + MEAN(CLOSE, 12)
+        + MEAN(CLOSE, 24)
+    ) / 4
+    """
+    avg_close_3 = MEAN(data['close'], 3)
+    avg_close_6 = MEAN(data['close'], 6)
+    avg_close_12 = MEAN(data['close'], 12)
+    avg_close_24 = MEAN(data['close'], 24)
+    return(
+        (avg_close_3 + avg_close_6 + avg_close_12 + avg_close_24)
+        / 4
+    ).rename('Alpha153')
+
+
+def alpha155(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha155 = (
+        SMA(VOLUME, 13, 2)
+        - SMA(VOLUME, 27, 2)
+        - SMA(
+            SMA(VOLUME, 13, 2) - SMA(VOLUME, 27, 2),
+            10,
+            2,
+        )
+    )
+    """
+    sma_volume_13d = SMA(data['volume'], 13, 2)
+    sma_volume_27d = SMA(data['volume'], 27, 2)
+    sma_change = SMA(
+        sma_volume_13d - sma_volume_27d,
+        10,
+        2
+        )
+
+    return(sma_volume_13d - sma_volume_27d - sma_change).rename('Alpha155')
+
+def alpha158(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha158 = (
+        (HIGH - SMA(CLOSE, 15, 2))
+        - (LOW - SMA(CLOSE, 15, 2))
+    ) / CLOSE
+    """
+    return(
+        (
+            (data['high'] - SMA(data['close'], 15, 2))
+        - (data['low'] - SMA(data['close'], 15, 2))
+        )
+        / data['close']
+    ).rename('Alpha158')
+
+
+def alpha161(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha161 = MEAN(
+        MAX(
+            MAX(
+                HIGH - LOW,
+                ABS(DELAY(CLOSE, 1) - HIGH),
+            ),
+            ABS(DELAY(CLOSE, 1) - LOW),
+        ),
+        12,
+    )
+    """
+    change = data['high'] - data['low']
+    prev_close = DELAY(data['close'], 1)
+    positive_change_high = prev_close - data['high']
+    positive_change_low = prev_close - data['low']
+
+    return(
+        MEAN(
+            MAX(
+                MAX(
+                    change,
+                    ABS(positive_change_high)
+                ),ABS(positive_change_low)
+            ),12
+        )
+    ).rename('Alpha161')
+
+
+def alpha162(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha162 = (
+        (
+            SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 12, 1)
+            / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 12, 1)
+            * 100
+            - MIN(
+                SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 12, 1)
+                / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 12, 1)
+                * 100,
+                12,
+            )
+        )
+        / (
+            MAX(
+                SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 12, 1)
+                / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 12, 1)
+                * 100,
+                12,
+            )
+            - MIN(
+                SMA(MAX(CLOSE - DELAY(CLOSE, 1), 0), 12, 1)
+                / SMA(ABS(CLOSE - DELAY(CLOSE, 1)), 12, 1)
+                * 100,
+                12,
+            )
+        )
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha167(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha167 = SUM(
+        CLOSE - DELAY(CLOSE, 1) > 0
+        ? CLOSE - DELAY(CLOSE, 1)
+        : 0,
+        12,
+    )
+    """
+    # TODO: Implement the 12-period sum of positive close changes.
+    pass
 
 
 def alpha168(data: pd.DataFrame) -> pd.Series:
@@ -392,6 +1438,170 @@ def alpha168(data: pd.DataFrame) -> pd.Series:
     Alpha168 = -VOLUME / MEAN(VOLUME, 20)
     """
     return(-data['volume'] / MEAN(data['volume'], 20)).rename('Alpha168')
+
+
+def alpha169(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha169 = SMA(
+        MEAN(
+            DELAY(SMA(CLOSE - DELAY(CLOSE, 1), 9, 1), 1),
+            12,
+        )
+        - MEAN(
+            DELAY(SMA(CLOSE - DELAY(CLOSE, 1), 9, 1), 1),
+            26,
+        ),
+        10,
+        1,
+    )
+    """
+    prev_close_1d = DELAY(data['close'])
+    close_change_1d = data['close'] - prev_close_1d
+    sma_change_9d = SMA(close_change_1d, 9, 1)
+    prev_sma_change_1d = DELAY(sma_change_9d, 1)
+    return(
+        SMA(
+            MEAN(prev_sma_change_1d, 12) - MEAN(prev_sma_change_1d, 26),
+            10,
+            1
+        )
+    ).rename('Alpha169')
+
+
+def alpha171(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha171 = (
+        -((LOW - CLOSE) * (OPEN ^ 5))
+        / ((CLOSE - HIGH) * (CLOSE ^ 5))
+    )
+    纯日内 K 线形态因子，它同时衡量：
+    收盘价在当日最高价和最低价之间的位置；
+    开盘价相对收盘价的高低；
+    并通过五次方放大开盘价与收盘价的差异。
+    """
+    distance_from_low = data['close'] - data['low']
+    distance_from_high = data['high'] -  data['close']
+    close_position = distance_from_low / distance_from_high
+    open_close_relation = (data['open'] / data['close']) ** 5
+
+    return(
+        -close_position * open_close_relation
+    ).rename('Alpha171')
+
+
+
+def alpha173(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha173 = (
+        3 * SMA(CLOSE, 13, 2)
+        - 2 * SMA(SMA(CLOSE, 13, 2), 13, 2)
+        + SMA(
+            SMA(SMA(LOG(CLOSE), 13, 2), 13, 2),
+            13,
+            2,
+        )
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha175(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha175 = MEAN(
+        MAX(
+            MAX(
+                HIGH - LOW,
+                ABS(DELAY(CLOSE, 1) - HIGH),
+            ),
+            ABS(DELAY(CLOSE, 1) - LOW),
+        ),
+        6,
+    )
+    """
+    price_change = data['high'] - data['low']
+    prev_close_1d = DELAY(data['close'], 1)
+
+    prev_close_to_high = ABS(prev_close_1d - data['high'])
+    prev_close_to_low = ABS(prev_close_1d - data['low'])
+
+    max_price_change = MAX(price_change, prev_close_to_high)
+    max_high_to_low = MAX(max_price_change, prev_close_to_low)
+
+    return(MEAN(max_high_to_low, 6)).rename('Alpha175')
+
+
+def alpha177(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha177 = (
+        (20 - HIGHDAY(HIGH, 20))
+        / 20
+        * 100
+    )
+    """
+    # TODO: 开发中
+    pass
+
+
+def alpha178(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha178 = (
+        (CLOSE - DELAY(CLOSE, 1))
+        / DELAY(CLOSE, 1)
+        * VOLUME
+    )
+    """
+    pre_close = DELAY(data['close'], 1)
+    return(
+        (data['close'] - pre_close)
+        / pre_close
+        * data['volume']
+    ).rename('Alpha178')
+
+
+def alpha187(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha187 = SUM(
+        OPEN <= DELAY(OPEN, 1)
+        ? 0
+        : MAX(HIGH - OPEN, OPEN - DELAY(OPEN, 1)),
+        20,
+    )
+    """
+    # TODO: Implement the 20-period DBM-style open movement sum.
+    pass
+
+
+def alpha188(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha188 = (
+        (HIGH - LOW - SMA(HIGH - LOW, 11, 2))
+        / SMA(HIGH - LOW, 11, 2)
+        * 100
+    )
+    """
+    SMA_12 = SMA(data['high'] - data['low'], 11, 2)
+    return(
+        (data['high'] - data['low'] - SMA_12)
+        / SMA_12
+        * 100
+    ).rename('Alpha188')
+
+
+def alpha189(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha189 = MEAN(
+        ABS(CLOSE - MEAN(CLOSE, 6)),
+        6,
+    )
+    """
+    avg_close_6 = MEAN(data["close"], periods=6)
+    absolute_deviation = ABS(data["close"] - avg_close_6)
+
+    return MEAN(
+        absolute_deviation,
+        periods=6,
+    ).rename("Alpha189")
 
 
 def alpha191(data: pd.DataFrame) -> pd.Series:
@@ -414,18 +1624,64 @@ FACTORS = {
     "Alpha11": alpha11,
     "Alpha14": alpha14,
     "Alpha15": alpha15,
+    "Alpha18": alpha18,
     "Alpha20": alpha20,
+    "Alpha24": alpha24,
     "Alpha29": alpha29,
     "Alpha31": alpha31,
+    "Alpha34": alpha34,
     "Alpha40": alpha40,
     "Alpha43": alpha43,
     "Alpha46": alpha46,
+    "Alpha47": alpha47,
     "Alpha53": alpha53,
+    "Alpha57": alpha57,
+    "Alpha58": alpha58,
+    "Alpha59": alpha59,
     "Alpha60": alpha60,
+    "Alpha63": alpha63,
+    "Alpha65": alpha65,
+    "Alpha66": alpha66,
+    "Alpha67": alpha67,
+    "Alpha68": alpha68,
     "Alpha69": alpha69,
+    "Alpha71": alpha71,
+    "Alpha72": alpha72,
+    "Alpha79": alpha79,
     "Alpha80": alpha80,
+    "Alpha81": alpha81,
+    "Alpha82": alpha82,
     "Alpha84": alpha84,
+    "Alpha85": alpha85,
+    "Alpha88": alpha88,
+    "Alpha89": alpha89,
+    "Alpha93": alpha93,
+    "Alpha96": alpha96,
+    "Alpha102": alpha102,
+    "Alpha106": alpha106,
+    "Alpha109": alpha109,
+    "Alpha110": alpha110,
+    "Alpha111": alpha111,
+    "Alpha118": alpha118,
+    "Alpha126": alpha126,
+    "Alpha134": alpha134,
+    "Alpha135": alpha135,
+    "Alpha139": alpha139,
+    "Alpha145": alpha145,
+    "Alpha150": alpha150,
+    "Alpha151": alpha151,
+    "Alpha152": alpha152,
+    "Alpha153": alpha153,
+    "Alpha155": alpha155,
+    "Alpha158": alpha158,
+    "Alpha161": alpha161,
     "Alpha168": alpha168,
+    "Alpha169": alpha169,
+    "Alpha171": alpha171,
+    "Alpha175": alpha175,
+    "Alpha178": alpha178,
+    "Alpha188": alpha188,
+    "Alpha189": alpha189,
     "Alpha191": alpha191,
 }
 
@@ -436,3 +1692,6 @@ def calculate_factors(data: pd.DataFrame) -> pd.DataFrame:
         result[name] = factor_func(data)
 
     return result
+
+if __name__ == "__main__":
+    print(f"当前已经注册了{len(FACTORS)}个因子")

@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 import factor
-from factor import FACTORS, alpha2, calculate_factors
+from factor import FACTORS, alpha2, alpha110, calculate_factors
 
 
 REQUESTED_FACTORS = [
@@ -83,6 +83,22 @@ def test_alpha2_returns_nan_when_high_equals_low():
     result = alpha2(data)
 
     assert np.isnan(result.iloc[-1])
+
+
+def test_alpha110_sums_only_positive_price_excursions():
+    data = pd.DataFrame(
+        {
+            "close": [100.0, *([10.0] * 20)],
+            "high": [101.0, *([11.0] * 20)],
+            "low": [99.0, *([9.0] * 20)],
+        }
+    )
+
+    result = alpha110(data)
+
+    expected_last_value = 19.0 / 110.0 * 100
+    assert result.first_valid_index() == 20
+    assert result.iloc[-1] == pytest.approx(expected_last_value)
 
 
 def test_calculate_factors_uses_registered_factor(monkeypatch):
