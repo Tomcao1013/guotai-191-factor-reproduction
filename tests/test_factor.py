@@ -62,6 +62,9 @@ def test_calculate_factors_adds_registered_factors_without_mutating_input():
             "close": [11.0, 10.0],
             "vwap": [10.5, 10.5],
             "volume": [1000.0, 1200.0],
+            "amount": [10500.0, 12600.0],
+            "benchmark_open": [4000.0, 4010.0],
+            "benchmark_close": [4010.0, 4000.0],
         }
     )
     original = data.copy()

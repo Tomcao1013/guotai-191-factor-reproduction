@@ -1,3 +1,6 @@
+BENCHMARK_INDEX = "sh000300"
+
+
 RESEARCH_UNIVERSE = (
     "sz000001",
     "sz000333",

@@ -3,6 +3,58 @@ import pandas as pd
 
 from factor_operators import *
 
+
+def _require_panel_columns(data: pd.DataFrame) -> None:
+    required_columns = {"trade_date", "trade_symbol"}
+    missing_columns = required_columns - set(data.columns)
+    if missing_columns:
+        raise ValueError(
+            "Cross-sectional factors require columns: "
+            + ", ".join(sorted(missing_columns))
+        )
+
+
+def _by_symbol(
+    data: pd.DataFrame,
+    series: pd.Series,
+    transform,
+) -> pd.Series:
+    _require_panel_columns(data)
+    return series.groupby(
+        data["trade_symbol"],
+        sort=False,
+    ).transform(transform)
+
+
+def _by_symbol_pair(
+    data: pd.DataFrame,
+    series_a: pd.Series,
+    series_b: pd.Series,
+    transform,
+) -> pd.Series:
+    _require_panel_columns(data)
+    result = pd.Series(np.nan, index=data.index, dtype=float)
+
+    for _, group_index in data.groupby(
+        "trade_symbol",
+        sort=False,
+    ).groups.items():
+        result.loc[group_index] = transform(
+            series_a.loc[group_index],
+            series_b.loc[group_index],
+        )
+
+    return result
+
+
+def _cross_sectional_rank(
+    data: pd.DataFrame,
+    series: pd.Series,
+) -> pd.Series:
+    _require_panel_columns(data)
+    return RANK(series, data["trade_date"])
+
+
 def alpha2(data: pd.DataFrame) -> pd.Series:
     """
     Alpha2 = -DELTA(
@@ -66,6 +118,35 @@ def alpha5(data: pd.DataFrame) -> pd.Series:
     """
     price_volume_corr = CORR(TSRANK(data['volume'], 5), TSRANK(data['high'], 5), 5)
     return (-TSMAX(price_volume_corr, 3)).rename('Alpha5')
+
+
+def alpha6(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha6 = -RANK(
+        SIGN(
+            DELTA(
+                OPEN * 0.85 + HIGH * 0.15,
+                4,
+            )
+        )
+    )
+    """
+    blended_price = (
+        data["open"] * 0.85
+        + data["high"] * 0.15
+    )
+    price_change_4d = _by_symbol(
+        data,
+        blended_price,
+        lambda series: DELTA(series, 4),
+    )
+
+    return (
+        -_cross_sectional_rank(
+            data,
+            SIGN(price_change_4d),
+        )
+    ).rename("Alpha6")
 
 
 def alpha9(data: pd.DataFrame) -> pd.Series:
@@ -238,8 +319,51 @@ def alpha25(data: pd.DataFrame) -> pd.Series:
         * (1 + RANK(SUM(RET, 250)))
     )
     """
-    # TODO: Developing
-    pass
+    average_volume_20d = _by_symbol(
+        data,
+        data["volume"],
+        lambda series: MEAN(series, 20),
+    )
+    relative_volume = data["volume"] / average_volume_20d
+    decayed_relative_volume = _by_symbol(
+        data,
+        relative_volume,
+        lambda series: DECAYLINEAR(series, 9),
+    )
+    ranked_decayed_volume = _cross_sectional_rank(
+        data,
+        decayed_relative_volume,
+    )
+
+    close_change_7d = _by_symbol(
+        data,
+        data["close"],
+        lambda series: DELTA(series, 7),
+    )
+    ranked_price_volume_signal = _cross_sectional_rank(
+        data,
+        close_change_7d * (1 - ranked_decayed_volume),
+    )
+
+    daily_return = _by_symbol(
+        data,
+        data["close"],
+        RET,
+    )
+    return_sum_250d = _by_symbol(
+        data,
+        daily_return,
+        lambda series: SUM(series, 250),
+    )
+    ranked_long_return = _cross_sectional_rank(
+        data,
+        return_sum_250d,
+    )
+
+    return (
+        -ranked_price_volume_signal
+        * (1 + ranked_long_return)
+    ).rename("Alpha25")
 
 
 def alpha26(data: pd.DataFrame) -> pd.Series:
@@ -280,8 +404,21 @@ def alpha27(data: pd.DataFrame) -> pd.Series:
         12,
     )
     """
-    # TODO: Developing
-    pass
+    return_3d = (
+        (data["close"] - DELAY(data["close"], 3))
+        / DELAY(data["close"], 3)
+        * 100
+    )
+    return_6d = (
+        (data["close"] - DELAY(data["close"], 6))
+        / DELAY(data["close"], 6)
+        * 100
+    )
+
+    return WMA(
+        return_3d + return_6d,
+        12,
+    ).rename("Alpha27")
 
 
 def alpha29(data: pd.DataFrame) -> pd.Series:
@@ -386,6 +523,42 @@ def alpha43(data: pd.DataFrame) -> pd.Series:
     return result.rename("Alpha43")
 
 
+def alpha44(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha44 = (
+        TSRANK(
+            DECAYLINEAR(
+                CORR(LOW, MEAN(VOLUME, 10), 7),
+                6,
+            ),
+            4,
+        )
+        + TSRANK(
+            DECAYLINEAR(DELTA(VWAP, 3), 10),
+            15,
+        )
+    )
+    """
+    low_volume_correlation = CORR(
+        data["low"],
+        MEAN(data["volume"], 10),
+        7,
+    )
+    decayed_correlation = DECAYLINEAR(
+        low_volume_correlation,
+        6,
+    )
+    decayed_vwap_change = DECAYLINEAR(
+        DELTA(data["vwap"], 3),
+        10,
+    )
+
+    return (
+        TSRANK(decayed_correlation, 4)
+        + TSRANK(decayed_vwap_change, 15)
+    ).rename("Alpha44")
+
+
 def alpha46(data: pd.DataFrame) -> pd.Series:
     """
     Alpha46 = (
@@ -420,6 +593,61 @@ def alpha47(data: pd.DataFrame) -> pd.Series:
             1,
         )
     ).rename('Alpha47')
+
+
+def alpha48(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha48 = (
+        -RANK(
+            SIGN(CLOSE - DELAY(CLOSE, 1))
+            + SIGN(DELAY(CLOSE, 1) - DELAY(CLOSE, 2))
+            + SIGN(DELAY(CLOSE, 2) - DELAY(CLOSE, 3))
+        )
+        * SUM(VOLUME, 5)
+        / SUM(VOLUME, 20)
+    )
+    """
+    previous_close_1d = _by_symbol(
+        data,
+        data["close"],
+        lambda series: DELAY(series, 1),
+    )
+    previous_close_2d = _by_symbol(
+        data,
+        data["close"],
+        lambda series: DELAY(series, 2),
+    )
+    previous_close_3d = _by_symbol(
+        data,
+        data["close"],
+        lambda series: DELAY(series, 3),
+    )
+
+    direction_signal = (
+        SIGN(data["close"] - previous_close_1d)
+        + SIGN(previous_close_1d - previous_close_2d)
+        + SIGN(previous_close_2d - previous_close_3d)
+    )
+    ranked_direction = _cross_sectional_rank(
+        data,
+        direction_signal,
+    )
+    volume_sum_5d = _by_symbol(
+        data,
+        data["volume"],
+        lambda series: SUM(series, 5),
+    )
+    volume_sum_20d = _by_symbol(
+        data,
+        data["volume"],
+        lambda series: SUM(series, 20),
+    ).replace(0, np.nan)
+
+    return (
+        -ranked_direction
+        * volume_sum_5d
+        / volume_sum_20d
+    ).rename("Alpha48")
 
 
 
@@ -774,6 +1002,39 @@ def alpha72(data: pd.DataFrame) -> pd.Series:
 
 
 
+def alpha75(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha75 = (
+        COUNT(
+            CLOSE > OPEN
+            & BANCHMARKINDEXCLOSE < BANCHMARKINDEXOPEN,
+            50,
+        )
+        / COUNT(
+            BANCHMARKINDEXCLOSE < BANCHMARKINDEXOPEN,
+            50,
+        )
+    )
+    """
+    benchmark_down = (
+        data["benchmark_close"]
+        < data["benchmark_open"]
+    )
+    stock_up_benchmark_down = (
+        (data["close"] > data["open"])
+        & benchmark_down
+    )
+    benchmark_down_count = COUNT(
+        benchmark_down,
+        50,
+    ).replace(0, np.nan)
+
+    return (
+        COUNT(stock_up_benchmark_down, 50)
+        / benchmark_down_count
+    ).rename("Alpha75")
+
+
 def alpha76(data: pd.DataFrame) -> pd.Series:
     """
     Alpha76 = (
@@ -866,8 +1127,31 @@ def alpha83(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: Developing
-    pass
+    ranked_high = _cross_sectional_rank(
+        data,
+        data["high"],
+    )
+    ranked_volume = _cross_sectional_rank(
+        data,
+        data["volume"],
+    )
+    rolling_covariance = _by_symbol_pair(
+        data,
+        ranked_high,
+        ranked_volume,
+        lambda high, volume: COVIANCE(
+            high,
+            volume,
+            5,
+        ),
+    )
+
+    return (
+        -_cross_sectional_rank(
+            data,
+            rolling_covariance,
+        )
+    ).rename("Alpha83")
 
 
 def alpha84(data: pd.DataFrame) -> pd.Series:
@@ -1046,6 +1330,43 @@ def alpha97(data: pd.DataFrame) -> pd.Series:
     return(STD(data['volume'], 10)).rename('Alpha97')
 
 
+def alpha99(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha99 = -RANK(
+        COVIANCE(
+            RANK(CLOSE),
+            RANK(VOLUME),
+            5,
+        )
+    )
+    """
+    ranked_close = _cross_sectional_rank(
+        data,
+        data["close"],
+    )
+    ranked_volume = _cross_sectional_rank(
+        data,
+        data["volume"],
+    )
+    rolling_covariance = _by_symbol_pair(
+        data,
+        ranked_close,
+        ranked_volume,
+        lambda close, volume: COVIANCE(
+            close,
+            volume,
+            5,
+        ),
+    )
+
+    return (
+        -_cross_sectional_rank(
+            data,
+            rolling_covariance,
+        )
+    ).rename("Alpha99")
+
+
 def alpha100(data: pd.DataFrame) -> pd.Series:
     """
     Alpha100 = STD(VOLUME, 20)
@@ -1080,8 +1401,11 @@ def alpha103(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    # TODO: 开发中
-    pass
+    return (
+        (20 - LOWDAY(data["low"], 20))
+        / 20
+        * 100
+    ).rename("Alpha103")
 
 
 def alpha106(data: pd.DataFrame) -> pd.Series:
@@ -1177,6 +1501,19 @@ def alpha111(data: pd.DataFrame) -> pd.Series:
     return(slow - fast).rename('Alpha111')
 
 
+def alpha116(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha116 = REGBETA(
+        CLOSE,
+        SEQUENCE(20),
+    )
+    """
+    return REGBETA(
+        data["close"],
+        SEQUENCE(20),
+    ).rename("Alpha116")
+
+
 def alpha117(data: pd.DataFrame) -> pd.Series:
     """
     Alpha117 = (
@@ -1239,8 +1576,24 @@ def alpha122(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: Developing
-    pass
+    smoothed_log_close = SMA(
+        SMA(
+            SMA(LOG(data["close"]), 13, 2),
+            13,
+            2,
+        ),
+        13,
+        2,
+    )
+    previous_smoothed_log_close = DELAY(
+        smoothed_log_close,
+        1,
+    ).replace(0, np.nan)
+
+    return (
+        (smoothed_log_close - previous_smoothed_log_close)
+        / previous_smoothed_log_close
+    ).rename("Alpha122")
 
 
 def alpha126(data: pd.DataFrame) -> pd.Series:
@@ -1285,8 +1638,20 @@ def alpha133(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    # TODO: Developing
-    pass
+    high_recency = (
+        (20 - HIGHDAY(data["high"], 20))
+        / 20
+        * 100
+    )
+    low_recency = (
+        (20 - LOWDAY(data["low"], 20))
+        / 20
+        * 100
+    )
+
+    return (
+        high_recency - low_recency
+    ).rename("Alpha133")
 
 
 def alpha134(data: pd.DataFrame) -> pd.Series:
@@ -1340,8 +1705,25 @@ def alpha144(data: pd.DataFrame) -> pd.Series:
         / COUNT(CLOSE < DELAY(CLOSE, 1), 20)
     )
     """
-    # TODO: Developing
-    pass
+    previous_close = DELAY(data["close"], 1)
+    negative_return_day = data["close"] < previous_close
+    return_per_amount = (
+        ABS(data["close"] / previous_close - 1)
+        / data["amount"].replace(0, np.nan)
+    )
+    negative_day_count = COUNT(
+        negative_return_day,
+        20,
+    ).replace(0, np.nan)
+
+    return (
+        SUMIF(
+            return_per_amount,
+            20,
+            negative_return_day,
+        )
+        / negative_day_count
+    ).rename("Alpha144")
 
 
 def alpha145(data: pd.DataFrame) -> pd.Series:
@@ -1360,6 +1742,62 @@ def alpha145(data: pd.DataFrame) -> pd.Series:
         / avg_volume_12
         *100
     ).rename('Alpha145')
+
+
+def alpha147(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha147 = REGBETA(
+        MEAN(CLOSE, 12),
+        SEQUENCE(12),
+    )
+    """
+    return REGBETA(
+        MEAN(data["close"], 12),
+        SEQUENCE(12),
+    ).rename("Alpha147")
+
+
+def alpha149(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha149 = REGBETA(
+        FILTER(
+            CLOSE / DELAY(CLOSE, 1) - 1,
+            BANCHMARKINDEXCLOSE
+            < DELAY(BANCHMARKINDEXCLOSE, 1),
+        ),
+        FILTER(
+            BANCHMARKINDEXCLOSE
+            / DELAY(BANCHMARKINDEXCLOSE, 1)
+            - 1,
+            BANCHMARKINDEXCLOSE
+            < DELAY(BANCHMARKINDEXCLOSE, 1),
+        ),
+        252,
+    )
+    """
+    stock_return = RET(data["close"])
+    benchmark_return = RET(data["benchmark_close"])
+    benchmark_down = (
+        data["benchmark_close"]
+        < DELAY(data["benchmark_close"], 1)
+    )
+    filtered_stock_return = FILTER(
+        stock_return,
+        benchmark_down,
+    )
+    filtered_benchmark_return = FILTER(
+        benchmark_return,
+        benchmark_down,
+    )
+    filtered_beta = REGBETA(
+        filtered_stock_return,
+        filtered_benchmark_return,
+        252,
+    )
+
+    return filtered_beta.reindex(
+        data.index,
+    ).rename("Alpha149")
 
 
 def alpha150(data: pd.DataFrame) -> pd.Series:
@@ -1662,8 +2100,27 @@ def alpha173(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    # TODO: 开发中
-    pass
+    smoothed_close = SMA(data["close"], 13, 2)
+    twice_smoothed_close = SMA(
+        smoothed_close,
+        13,
+        2,
+    )
+    triple_smoothed_log_close = SMA(
+        SMA(
+            SMA(LOG(data["close"]), 13, 2),
+            13,
+            2,
+        ),
+        13,
+        2,
+    )
+
+    return (
+        3 * smoothed_close
+        - 2 * twice_smoothed_close
+        + triple_smoothed_log_close
+    ).rename("Alpha173")
 
 
 def alpha175(data: pd.DataFrame) -> pd.Series:
@@ -1699,8 +2156,11 @@ def alpha177(data: pd.DataFrame) -> pd.Series:
         * 100
     )
     """
-    # TODO: 开发中
-    pass
+    return (
+        (20 - HIGHDAY(data["high"], 20))
+        / 20
+        * 100
+    ).rename("Alpha177")
 
 
 def alpha178(data: pd.DataFrame) -> pd.Series:
@@ -1730,8 +2190,34 @@ def alpha180(data: pd.DataFrame) -> pd.Series:
         : -VOLUME
     )
     """
-    # TODO: Developing
-    pass
+    average_volume_20d = MEAN(data["volume"], 20)
+    close_change_7d = DELTA(data["close"], 7)
+    ranked_absolute_change = TSRANK(
+        ABS(close_change_7d),
+        60,
+    )
+    high_volume_value = (
+        -ranked_absolute_change
+        * SIGN(close_change_7d)
+    )
+
+    has_volume_history = average_volume_20d.notna()
+    is_high_volume = data["volume"] > average_volume_20d
+    result = pd.Series(
+        np.nan,
+        index=data.index,
+        dtype=float,
+    )
+    result = result.mask(
+        has_volume_history & is_high_volume,
+        high_volume_value,
+    )
+    result = result.mask(
+        has_volume_history & ~is_high_volume,
+        -data["volume"],
+    )
+
+    return result.rename("Alpha180")
 
 
 def alpha182(data: pd.DataFrame) -> pd.Series:
@@ -1751,8 +2237,25 @@ def alpha182(data: pd.DataFrame) -> pd.Series:
         / 20
     )
     """
-    # TODO: Developing
-    pass
+    stock_up = data["close"] > data["open"]
+    stock_down = data["close"] < data["open"]
+    benchmark_up = (
+        data["benchmark_close"]
+        > data["benchmark_open"]
+    )
+    benchmark_down = (
+        data["benchmark_close"]
+        < data["benchmark_open"]
+    )
+    same_direction = (
+        (stock_up & benchmark_up)
+        | (stock_down & benchmark_down)
+    )
+
+    return (
+        COUNT(same_direction, 20)
+        / 20
+    ).rename("Alpha182")
 
 
 def alpha185(data: pd.DataFrame) -> pd.Series:
@@ -1761,8 +2264,14 @@ def alpha185(data: pd.DataFrame) -> pd.Series:
         -1 * (1 - OPEN / CLOSE) ^ 2
     )
     """
-    # TODO: Developing
-    pass
+    intraday_reversal = -(
+        1 - data["open"] / data["close"]
+    ) ** 2
+
+    return _cross_sectional_rank(
+        data,
+        intraday_reversal,
+    ).rename("Alpha185")
 
 
 def alpha187(data: pd.DataFrame) -> pd.Series:
@@ -1810,6 +2319,55 @@ def alpha189(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha189")
 
 
+def alpha190(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha190 = LOG(
+        (
+            COUNT(RET > GROWTH, 20) - 1
+        )
+        * SUMIF((RET - GROWTH) ^ 2, 20, RET < GROWTH)
+        / (
+            COUNT(RET < GROWTH, 20)
+            * SUMIF((RET - GROWTH) ^ 2, 20, RET > GROWTH)
+        )
+    )
+
+    GROWTH = (CLOSE / DELAY(CLOSE, 19)) ^ (1 / 20) - 1
+    """
+    daily_return = RET(data["close"])
+    growth_rate = (
+        data["close"]
+        / DELAY(data["close"], 19)
+    ) ** (1 / 20) - 1
+    squared_deviation = (
+        daily_return - growth_rate
+    ) ** 2
+
+    return_above_growth = daily_return > growth_rate
+    return_below_growth = daily_return < growth_rate
+
+    numerator = (
+        COUNT(return_above_growth, 20) - 1
+    ) * SUMIF(
+        squared_deviation,
+        20,
+        return_below_growth,
+    )
+    denominator = (
+        COUNT(return_below_growth, 20)
+        * SUMIF(
+            squared_deviation,
+            20,
+            return_above_growth,
+        )
+    ).replace(0, np.nan)
+    log_input = numerator / denominator
+
+    return LOG(
+        log_input,
+    ).rename("Alpha190")
+
+
 def alpha191(data: pd.DataFrame) -> pd.Series:
     """
     Alpha191 = (
@@ -1822,10 +2380,24 @@ def alpha191(data: pd.DataFrame) -> pd.Series:
            + (data['high'] + data['low']) / 2
            - data['close']).rename('Alpha191')
 
+
+PANEL_FACTORS = frozenset(
+    {
+        "Alpha6",
+        "Alpha25",
+        "Alpha48",
+        "Alpha83",
+        "Alpha99",
+        "Alpha185",
+    }
+)
+
+
 FACTORS = {
     "Alpha2": alpha2,
     "Alpha3": alpha3,
     "Alpha5": alpha5,
+    "Alpha6": alpha6,
     "Alpha9": alpha9,
     "Alpha11": alpha11,
     "Alpha13": alpha13,
@@ -1833,15 +2405,21 @@ FACTORS = {
     "Alpha15": alpha15,
     "Alpha18": alpha18,
     "Alpha20": alpha20,
+    "Alpha21": alpha21,
     "Alpha24": alpha24,
+    "Alpha25": alpha25,
     "Alpha26": alpha26,
+    "Alpha27": alpha27,
     "Alpha29": alpha29,
     "Alpha31": alpha31,
     "Alpha34": alpha34,
     "Alpha40": alpha40,
     "Alpha43": alpha43,
+    "Alpha44": alpha44,
     "Alpha46": alpha46,
     "Alpha47": alpha47,
+    "Alpha48": alpha48,
+    "Alpha52": alpha52,
     "Alpha53": alpha53,
     "Alpha57": alpha57,
     "Alpha58": alpha58,
@@ -1853,30 +2431,46 @@ FACTORS = {
     "Alpha67": alpha67,
     "Alpha68": alpha68,
     "Alpha69": alpha69,
+    "Alpha70": alpha70,
     "Alpha71": alpha71,
     "Alpha72": alpha72,
+    "Alpha75": alpha75,
+    "Alpha76": alpha76,
     "Alpha79": alpha79,
     "Alpha80": alpha80,
     "Alpha81": alpha81,
     "Alpha82": alpha82,
+    "Alpha83": alpha83,
     "Alpha84": alpha84,
     "Alpha85": alpha85,
     "Alpha88": alpha88,
     "Alpha89": alpha89,
     "Alpha93": alpha93,
+    "Alpha95": alpha95,
     "Alpha96": alpha96,
     "Alpha97": alpha97,
+    "Alpha99": alpha99,
+    "Alpha100": alpha100,
     "Alpha102": alpha102,
+    "Alpha103": alpha103,
     "Alpha106": alpha106,
     "Alpha109": alpha109,
     "Alpha110": alpha110,
     "Alpha111": alpha111,
+    "Alpha116": alpha116,
+    "Alpha117": alpha117,
     "Alpha118": alpha118,
+    "Alpha122": alpha122,
     "Alpha126": alpha126,
+    "Alpha132": alpha132,
+    "Alpha133": alpha133,
     "Alpha134": alpha134,
     "Alpha135": alpha135,
     "Alpha139": alpha139,
+    "Alpha144": alpha144,
     "Alpha145": alpha145,
+    "Alpha147": alpha147,
+    "Alpha149": alpha149,
     "Alpha150": alpha150,
     "Alpha151": alpha151,
     "Alpha152": alpha152,
@@ -1888,17 +2482,52 @@ FACTORS = {
     "Alpha168": alpha168,
     "Alpha169": alpha169,
     "Alpha171": alpha171,
+    "Alpha173": alpha173,
     "Alpha175": alpha175,
+    "Alpha177": alpha177,
     "Alpha178": alpha178,
+    "Alpha180": alpha180,
+    "Alpha182": alpha182,
+    "Alpha185": alpha185,
     "Alpha188": alpha188,
     "Alpha189": alpha189,
+    "Alpha190": alpha190,
     "Alpha191": alpha191,
 }
 
+
 def calculate_factors(data: pd.DataFrame) -> pd.DataFrame:
     result = data.copy()
+    has_cross_section = (
+        {"trade_date", "trade_symbol"}.issubset(data.columns)
+        and data["trade_symbol"].nunique() > 1
+    )
 
     for name, factor_func in FACTORS.items():
+        if name in PANEL_FACTORS and not has_cross_section:
+            result[name] = pd.Series(
+                np.nan,
+                index=data.index,
+                name=name,
+            )
+            continue
+
+        if has_cross_section and name not in PANEL_FACTORS:
+            factor_result = pd.Series(
+                np.nan,
+                index=data.index,
+                name=name,
+            )
+            for _, group_index in data.groupby(
+                "trade_symbol",
+                sort=False,
+            ).groups.items():
+                factor_result.loc[group_index] = factor_func(
+                    data.loc[group_index]
+                )
+            result[name] = factor_result
+            continue
+
         result[name] = factor_func(data)
 
     return result

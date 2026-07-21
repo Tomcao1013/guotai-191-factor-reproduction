@@ -1,7 +1,20 @@
 import numpy as np
 import pandas as pd
 
-from factor_operators import ABS, COUNT, DELTA, REGBETA
+from factor_operators import (
+    ABS,
+    COUNT,
+    DECAYLINEAR,
+    DELTA,
+    FILTER,
+    HIGHDAY,
+    LOWDAY,
+    RANK,
+    REGBETA,
+    SEQUENCE,
+    SUMIF,
+    WMA,
+)
 
 
 def test_abs_returns_elementwise_absolute_values():
@@ -48,3 +61,66 @@ def test_regbeta_returns_nan_when_the_independent_variable_is_constant():
     result = REGBETA(series_a, series_b, periods=3)
 
     assert np.isnan(result.iloc[-1])
+
+
+def test_regbeta_accepts_a_fixed_sequence_window():
+    series = pd.Series([1.0, 3.0, 5.0, 7.0])
+
+    result = REGBETA(series, SEQUENCE(3))
+
+    expected = pd.Series([np.nan, np.nan, 2.0, 2.0])
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_rank_is_cross_sectional_within_each_group():
+    series = pd.Series([3.0, 1.0, 2.0, 10.0, 20.0])
+    groups = pd.Series(["a", "a", "a", "b", "b"])
+
+    result = RANK(series, groups)
+
+    expected = pd.Series([1.0, 1 / 3, 2 / 3, 0.5, 1.0])
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_weighted_averages_give_more_weight_to_recent_values():
+    series = pd.Series([1.0, 2.0, 3.0])
+
+    wma_result = WMA(series, 3)
+    decay_result = DECAYLINEAR(series, 3)
+
+    wma_weights = np.array([0.9**2, 0.9, 1.0])
+    expected_wma = np.dot(series, wma_weights / wma_weights.sum())
+    expected_decay = np.dot(series, np.array([1, 2, 3]) / 6)
+
+    assert wma_result.iloc[-1] == expected_wma
+    assert decay_result.iloc[-1] == expected_decay
+
+
+def test_extreme_day_uses_the_most_recent_tied_extreme():
+    series = pd.Series([3.0, 1.0, 3.0])
+
+    high_day = HIGHDAY(series, 3)
+    low_day = LOWDAY(series, 3)
+
+    assert high_day.iloc[-1] == 0.0
+    assert low_day.iloc[-1] == 1.0
+
+
+def test_sumif_sums_only_rows_matching_the_condition():
+    series = pd.Series([1.0, 2.0, 3.0])
+    condition = pd.Series([True, False, True])
+
+    result = SUMIF(series, 3, condition)
+
+    expected = pd.Series([np.nan, np.nan, 4.0])
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_filter_keeps_only_matching_rows():
+    series = pd.Series([1.0, 2.0, 3.0])
+    condition = pd.Series([False, True, True])
+
+    result = FILTER(series, condition)
+
+    expected = pd.Series([2.0, 3.0], index=[1, 2])
+    pd.testing.assert_series_equal(result, expected)

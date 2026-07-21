@@ -3,7 +3,7 @@ from pathlib import Path
 import akshare as ak
 import pandas as pd
 
-from research_stocks import RESEARCH_UNIVERSE
+from research_stocks import BENCHMARK_INDEX, RESEARCH_UNIVERSE
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -15,6 +15,30 @@ def main() -> None:
 
     price_dir = PROJECT_ROOT / "data" / "price"
     price_dir.mkdir(parents=True, exist_ok=True)
+
+    benchmark_data = ak.stock_zh_index_daily(
+        symbol=BENCHMARK_INDEX,
+    ).rename(
+        columns={
+            "date": "trade_date",
+            "open": "benchmark_open",
+            "close": "benchmark_close",
+        }
+    )
+    benchmark_data["trade_date"] = pd.to_datetime(
+        benchmark_data["trade_date"]
+    )
+    benchmark_data = benchmark_data.loc[
+        benchmark_data["trade_date"].between(
+            start_date,
+            end_date,
+        ),
+        [
+            "trade_date",
+            "benchmark_open",
+            "benchmark_close",
+        ],
+    ]
 
     for symbol in RESEARCH_UNIVERSE:
         market = symbol[:2].upper()
@@ -65,6 +89,10 @@ def main() -> None:
             ],
             on="trade_date",
             how="inner",
+        ).merge(
+            benchmark_data,
+            on="trade_date",
+            how="inner",
         )
 
         data["trade_symbol"] = trade_symbol
@@ -98,6 +126,8 @@ def main() -> None:
                     "vwap",
                     "volume",
                     "amount",
+                    "benchmark_open",
+                    "benchmark_close",
                 ]
             ]
             .replace([float("inf"), float("-inf")], pd.NA)
