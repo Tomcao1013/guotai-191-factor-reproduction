@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+import factor_operators
 from factor_operators import (
     ABS,
     COUNT,
@@ -124,3 +125,45 @@ def test_filter_keeps_only_matching_rows():
 
     expected = pd.Series([2.0, 3.0], index=[1, 2])
     pd.testing.assert_series_equal(result, expected)
+
+
+def _operator(name: str):
+    operator = getattr(
+        factor_operators,
+        name,
+        None,
+    )
+    assert callable(operator), f"{name} is not implemented"
+    return operator
+
+
+def test_sumac_returns_the_cumulative_sum():
+    series = pd.Series([1.0, 2.0, np.nan, 3.0])
+
+    result = _operator("SUMAC")(series)
+
+    expected = pd.Series([1.0, 3.0, np.nan, 6.0])
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_tr_hd_ld_match_the_report_definitions():
+    high = pd.Series([11.0, 13.0, 12.0])
+    low = pd.Series([9.0, 10.0, 8.0])
+    close = pd.Series([10.0, 12.0, 9.0])
+
+    true_range = _operator("TR")(high, low, close)
+    high_direction = _operator("HD")(high)
+    low_direction = _operator("LD")(low)
+
+    pd.testing.assert_series_equal(
+        true_range,
+        pd.Series([np.nan, 3.0, 4.0]),
+    )
+    pd.testing.assert_series_equal(
+        high_direction,
+        pd.Series([np.nan, 2.0, -1.0]),
+    )
+    pd.testing.assert_series_equal(
+        low_direction,
+        pd.Series([np.nan, -1.0, 2.0]),
+    )

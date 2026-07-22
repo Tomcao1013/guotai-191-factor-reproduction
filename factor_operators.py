@@ -10,6 +10,21 @@ def SUM(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods, min_periods=periods).sum()
 
 
+def SUMAC(
+    series: pd.Series,
+    periods: int | None = None,
+) -> pd.Series:
+    if periods is None:
+        return series.cumsum()
+    if periods <= 0:
+        raise ValueError("SUMAC periods must be positive")
+
+    return series.rolling(
+        window=periods,
+        min_periods=periods,
+    ).sum()
+
+
 def DELAY(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.shift(periods)
 
@@ -284,3 +299,26 @@ def MIN(value1: pd.Series | int | float, value2: pd.Series | int | float,) -> pd
 def RET(close: pd.Series) -> pd.Series:
     previous_close = DELAY(close, periods=1)
     return close / previous_close - 1
+
+
+def TR(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+) -> pd.Series:
+    previous_close = DELAY(close, 1)
+    return MAX(
+        MAX(
+            high - low,
+            ABS(high - previous_close),
+        ),
+        ABS(low - previous_close),
+    )
+
+
+def HD(high: pd.Series) -> pd.Series:
+    return high - DELAY(high, 1)
+
+
+def LD(low: pd.Series) -> pd.Series:
+    return DELAY(low, 1) - low
