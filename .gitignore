@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Local test suites
+/tests/
+
 # Local virtual environments and environment variables
 .venv/
 venv/
