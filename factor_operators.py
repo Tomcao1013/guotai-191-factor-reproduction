@@ -14,6 +14,7 @@ def SUMAC(
     series: pd.Series,
     periods: int | None = None,
 ) -> pd.Series:
+    """Return a cumulative sum, or a rolling sum when a window is given."""
     if periods is None:
         return series.cumsum()
     if periods <= 0:
@@ -45,7 +46,17 @@ def TSRANK(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods).rank(method='average', ascending=True, pct=False)
 
 
-def RANK(series: pd.Series, groups: pd.Series) -> pd.Series:
+def RANK(
+    series: pd.Series,
+    groups: pd.Series | None = None,
+) -> pd.Series:
+    if groups is None:
+        return series.rank(
+            method="average",
+            ascending=True,
+            pct=True,
+        )
+
     if not series.index.equals(groups.index):
         raise ValueError("RANK inputs must have the same index")
 
@@ -64,7 +75,10 @@ def CORR(series_a: pd.Series,
          periods: int
         ) -> pd.Series:
     if periods < 2:
-        raise ValueError("CORR's periods value must be greater than 2")
+        raise ValueError("CORR periods must be at least 2")
+    if not series_a.index.equals(series_b.index):
+        raise ValueError("CORR inputs must have the same index")
+
     correlation = series_a.rolling(
         window=periods,
         min_periods=periods,
@@ -150,7 +164,7 @@ def SMA(
     periods: int,
     weight: int,
     ) -> pd.Series:
-    if periods <= 0 or weight > periods:
+    if periods <= 0 or weight <= 0 or weight > periods:
         raise ValueError("0 < weight <= periods")
     alpha = weight / periods
 
@@ -322,3 +336,46 @@ def HD(high: pd.Series) -> pd.Series:
 
 def LD(low: pd.Series) -> pd.Series:
     return DELAY(low, 1) - low
+
+
+def _require_panel_columns(data: pd.DataFrame) -> None:
+    required_columns = {"trade_date", "trade_symbol"}
+    missing_columns = required_columns - set(data.columns)
+    if missing_columns:
+        raise ValueError(
+            "Cross-sectional factors require columns: "
+            + ", ".join(sorted(missing_columns))
+        )
+
+
+def _by_symbol(
+    data: pd.DataFrame,
+    series: pd.Series,
+    transform,
+) -> pd.Series:
+    _require_panel_columns(data)
+    return series.groupby(
+        data["trade_symbol"],
+        sort=False,
+    ).transform(transform)
+
+
+def _by_symbol_pair(
+    data: pd.DataFrame,
+    series_a: pd.Series,
+    series_b: pd.Series,
+    transform,
+) -> pd.Series:
+    _require_panel_columns(data)
+    result = pd.Series(np.nan, index=data.index, dtype=float)
+
+    for _, group_index in data.groupby(
+        "trade_symbol",
+        sort=False,
+    ).groups.items():
+        result.loc[group_index] = transform(
+            series_a.loc[group_index],
+            series_b.loc[group_index],
+        )
+
+    return result
