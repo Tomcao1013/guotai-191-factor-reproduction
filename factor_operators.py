@@ -10,6 +10,17 @@ def SUM(series: pd.Series, periods: int = 1) -> pd.Series:
     return series.rolling(window=periods, min_periods=periods).sum()
 
 
+def PROD(series: pd.Series, periods: int) -> pd.Series:
+    """Return the rolling product over a complete window."""
+    if periods <= 0:
+        raise ValueError("PROD periods must be positive")
+
+    return series.rolling(
+        window=periods,
+        min_periods=periods,
+    ).apply(np.prod, raw=True)
+
+
 def SUMAC(
     series: pd.Series,
     periods: int | None = None,

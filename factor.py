@@ -2,19 +2,25 @@ import numpy as np
 import pandas as pd
 
 from factor_operators import *
-from factor_operators import (
-    _by_symbol,
-    _by_symbol_pair,
-    _require_panel_columns,
-)
 
 
-def _cross_sectional_rank(
-    data: pd.DataFrame,
-    series: pd.Series,
-) -> pd.Series:
-    _require_panel_columns(data)
-    return RANK(series, data["trade_date"])
+def alpha1(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha1 = (-1*CORR(RANK(DELTA(LOG(VOLUME),1)),RANK(((CLOSE-OPEN)/OPEN)),6))
+    """
+    volume_change = DELTA(LOG(data["volume"]), 1)
+    open_price = data["open"].replace(0, np.nan)
+    close_open_return = (
+        data["close"] - data["open"]
+    ) / open_price
+
+    return (
+        -CORR(
+            RANK(volume_change),
+            RANK(close_open_return),
+            6,
+        )
+    ).rename("Alpha1")
 
 
 def alpha2(data: pd.DataFrame) -> pd.Series:
@@ -153,18 +159,32 @@ def alpha6(data: pd.DataFrame) -> pd.Series:
         data["open"] * 0.85
         + data["high"] * 0.15
     )
-    price_change_4d = _by_symbol(
-        data,
-        blended_price,
-        lambda series: DELTA(series, 4),
-    )
+    price_change_4d = DELTA(blended_price, 4)
 
     return (
-        -_cross_sectional_rank(
-            data,
-            SIGN(price_change_4d),
-        )
+        -RANK(SIGN(price_change_4d))
     ).rename("Alpha6")
+
+
+def alpha7(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha7 = (
+        RANK(MAX(VWAP - CLOSE, 3))
+        + RANK(MIN(VWAP - CLOSE, 3))
+    ) * RANK(DELTA(VOLUME, 3))
+    """
+    vwap_close_difference = data["vwap"] - data["close"]
+    maximum_difference = MAX(vwap_close_difference, 3)
+    minimum_difference = MIN(vwap_close_difference, 3)
+    volume_change = DELTA(data["volume"], 3)
+
+    return (
+        (
+            RANK(maximum_difference)
+            + RANK(minimum_difference)
+        )
+        * RANK(volume_change)
+    ).rename("Alpha7")
 
 
 def alpha8(data: pd.DataFrame) -> pd.Series:
@@ -181,16 +201,9 @@ def alpha8(data: pd.DataFrame) -> pd.Series:
         (data["high"] + data["low"]) / 2 * 0.2
         + data["vwap"] * 0.8
     )
-    price_change_4d = _by_symbol(
-        data,
-        blended_price,
-        lambda series: DELTA(series, 4),
-    )
+    price_change_4d = DELTA(blended_price, 4)
 
-    return _cross_sectional_rank(
-        data,
-        -price_change_4d,
-    ).rename("Alpha8")
+    return RANK(-price_change_4d).rename("Alpha8")
 
 
 def alpha9(data: pd.DataFrame) -> pd.Series:
@@ -209,6 +222,23 @@ def alpha9(data: pd.DataFrame) -> pd.Series:
     change = (data['high'] + data['low']) / 2
     delay_change = -DELAY(data['high'] + data['low'], 1) / 2
     return SMA((change + delay_change) * (data['high'] - data['low']) / data['volume'], 7, 2).rename('Alpha9')
+
+
+def alpha10(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha10 = (RANK(MAX(((RET<0)?STD(RET,20):CLOSE)^2),5))
+    """
+    daily_return = RET(data["close"])
+    return_std_20d = STD(daily_return, 20)
+    conditional_value = data["close"].mask(
+        daily_return < 0,
+        return_std_20d,
+    )
+    squared_value = conditional_value ** 2
+
+    return RANK(
+        MAX(squared_value, 5)
+    ).rename("Alpha10")
 
 
 def alpha11(data: pd.DataFrame) -> pd.Series:
@@ -254,17 +284,11 @@ def alpha12(data: pd.DataFrame) -> pd.Series:
         * -RANK(ABS(CLOSE - VWAP))
     )
     """
-    average_vwap_10d = _by_symbol(
-        data,
-        data["vwap"],
-        lambda series: SUM(series, 10) / 10,
-    )
-    ranked_open_deviation = _cross_sectional_rank(
-        data,
+    average_vwap_10d = SUM(data["vwap"], 10) / 10
+    ranked_open_deviation = RANK(
         data["open"] - average_vwap_10d,
     )
-    ranked_close_vwap_distance = _cross_sectional_rank(
-        data,
+    ranked_close_vwap_distance = RANK(
         ABS(data["close"] - data["vwap"]),
     )
 
@@ -299,6 +323,34 @@ def alpha15(data: pd.DataFrame) -> pd.Series:
     Alpha15 = OPEN / DELAY(CLOSE, 1) - 1
     """
     return(data['open'] / DELAY(data['close'], 1) - 1).rename('Alpha15')
+
+
+def alpha16(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha16 = (-1*TSMAX(RANK(CORR(RANK(VOLUME),RANK(VWAP),5)),5))
+    """
+    ranked_correlation = RANK(
+        CORR(
+            RANK(data["volume"]),
+            RANK(data["vwap"]),
+            5,
+        )
+    )
+
+    return (-TSMAX(ranked_correlation, 5)).rename("Alpha16")
+
+
+def alpha17(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha17 = RANK((VWAP - MAX(VWAP, 15))) ^ DELTA(CLOSE, 5)
+    """
+    vwap_maximum = MAX(data["vwap"], 15)
+    vwap_deviation = data["vwap"] - vwap_maximum
+
+    return (
+        RANK(vwap_deviation)
+        ** DELTA(data["close"], 5)
+    ).rename("Alpha17")
 
 
 def alpha18(data: pd.DataFrame) -> pd.Series:
@@ -488,46 +540,19 @@ def alpha25(data: pd.DataFrame) -> pd.Series:
         * (1 + RANK(SUM(RET, 250)))
     )
     """
-    average_volume_20d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: MEAN(series, 20),
-    )
+    average_volume_20d = MEAN(data["volume"], 20)
     relative_volume = data["volume"] / average_volume_20d
-    decayed_relative_volume = _by_symbol(
-        data,
-        relative_volume,
-        lambda series: DECAYLINEAR(series, 9),
-    )
-    ranked_decayed_volume = _cross_sectional_rank(
-        data,
-        decayed_relative_volume,
-    )
+    decayed_relative_volume = DECAYLINEAR(relative_volume, 9)
+    ranked_decayed_volume = RANK(decayed_relative_volume)
 
-    close_change_7d = _by_symbol(
-        data,
-        data["close"],
-        lambda series: DELTA(series, 7),
-    )
-    ranked_price_volume_signal = _cross_sectional_rank(
-        data,
+    close_change_7d = DELTA(data["close"], 7)
+    ranked_price_volume_signal = RANK(
         close_change_7d * (1 - ranked_decayed_volume),
     )
 
-    daily_return = _by_symbol(
-        data,
-        data["close"],
-        RET,
-    )
-    return_sum_250d = _by_symbol(
-        data,
-        daily_return,
-        lambda series: SUM(series, 250),
-    )
-    ranked_long_return = _cross_sectional_rank(
-        data,
-        return_sum_250d,
-    )
+    daily_return = RET(data["close"])
+    return_sum_250d = SUM(daily_return, 250)
+    ranked_long_return = RANK(return_sum_250d)
 
     return (
         -ranked_price_volume_signal
@@ -668,6 +693,46 @@ def alpha31(data: pd.DataFrame) -> pd.Series:
     return(deviation * 100).rename('Alpha31')
 
 
+def alpha32(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha32 = (-1*SUM(RANK(CORR(RANK(HIGH),RANK(VOLUME),3)),3))
+    """
+    ranked_correlation = RANK(
+        CORR(
+            RANK(data["high"]),
+            RANK(data["volume"]),
+            3,
+        )
+    )
+
+    return (-SUM(ranked_correlation, 3)).rename("Alpha32")
+
+
+def alpha33(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha33 = ((((-1*TSMIN(LOW,5))+DELAY(TSMIN(LOW,5),5))
+    *RANK(((SUM(RET,240)-SUM(RET,20))/220)))*TSRANK(VOLUME,5))
+    """
+    minimum_low = TSMIN(data["low"], 5)
+    daily_return = RET(data["close"]).replace(
+        [np.inf, -np.inf],
+        np.nan,
+    )
+    return (
+        (
+            -minimum_low
+            + DELAY(minimum_low, 5)
+        )
+        * RANK(
+            (
+                SUM(daily_return, 240)
+                - SUM(daily_return, 20)
+            ) / 220
+        )
+        * TSRANK(data["volume"], 5)
+    ).rename("Alpha33")
+
+
 def alpha34(data: pd.DataFrame) -> pd.Series:
     """
     Alpha34 = MEAN(CLOSE, 12) / CLOSE
@@ -677,6 +742,57 @@ def alpha34(data: pd.DataFrame) -> pd.Series:
     ).rename('Alpha34')
 
 
+def alpha35(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha35 = (MIN(RANK(DECAYLINEAR(DELTA(OPEN,1),15)),
+    RANK(DECAYLINEAR(CORR((VOLUME),((OPEN*0.65)+(OPEN*0.35)),17),7)))*-1)
+    """
+    open_blend = (
+        data["open"] * 0.65
+        + data["open"] * 0.35
+    )
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(data["open"], 1),
+            15,
+        )
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                data["volume"],
+                open_blend,
+                17,
+            ),
+            7,
+        )
+    )
+
+    return (-MIN(first_rank, second_rank)).rename("Alpha35")
+
+
+def alpha36(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha36 = RANK(
+        SUM(
+            CORR(RANK(VOLUME), RANK(VWAP), 6),
+            2,
+        )
+    )
+    """
+    ranked_volume = RANK(data["volume"])
+    ranked_vwap = RANK(data["vwap"])
+    rank_correlation = CORR(
+        ranked_volume,
+        ranked_vwap,
+        6,
+    )
+
+    return RANK(
+        SUM(rank_correlation, 2)
+    ).rename("Alpha36")
+
+
 def alpha37(data: pd.DataFrame) -> pd.Series:
     """
     Alpha37 = -RANK(
@@ -684,33 +800,14 @@ def alpha37(data: pd.DataFrame) -> pd.Series:
         - DELAY(SUM(OPEN, 5) * SUM(RET, 5), 10)
     )
     """
-    open_sum_5d = _by_symbol(
-        data,
-        data["open"],
-        lambda series: SUM(series, 5),
-    )
-    daily_return = _by_symbol(
-        data,
-        data["close"],
-        RET,
-    )
-    return_sum_5d = _by_symbol(
-        data,
-        daily_return,
-        lambda series: SUM(series, 5),
-    )
+    open_sum_5d = SUM(data["open"], 5)
+    daily_return = RET(data["close"])
+    return_sum_5d = SUM(daily_return, 5)
     product = open_sum_5d * return_sum_5d
-    delayed_product = _by_symbol(
-        data,
-        product,
-        lambda series: DELAY(series, 10),
-    )
+    delayed_product = DELAY(product, 10)
 
     return (
-        -_cross_sectional_rank(
-            data,
-            product - delayed_product,
-        )
+        -RANK(product - delayed_product)
     ).rename("Alpha37")
 
 
@@ -733,6 +830,36 @@ def alpha38(data: pd.DataFrame) -> pd.Series:
     return result.where(
         average_high_20d.notna(),
     ).rename("Alpha38")
+
+
+def alpha39(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha39 = ((RANK(DECAYLINEAR(DELTA((CLOSE),2),8))
+    -RANK(DECAYLINEAR(CORR(((VWAP*0.3)+(OPEN*0.7)),
+    SUM(MEAN(VOLUME,180),37),14),12)))*-1)
+    """
+    blended_price = (
+        data["vwap"] * 0.3
+        + data["open"] * 0.7
+    )
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(data["close"], 2),
+            8,
+        )
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                blended_price,
+                SUM(MEAN(data["volume"], 180), 37),
+                14,
+            ),
+            12,
+        )
+    )
+
+    return (-(first_rank - second_rank)).rename("Alpha39")
 
 
 def alpha40(data: pd.DataFrame) -> pd.Series:
@@ -767,19 +894,11 @@ def alpha41(data: pd.DataFrame) -> pd.Series:
         TSMAX(DELTA(VWAP, 3), 5)
     )
     """
-    vwap_change_3d = _by_symbol(
-        data,
-        data["vwap"],
-        lambda series: DELTA(series, 3),
-    )
-    maximum_change_5d = _by_symbol(
-        data,
-        vwap_change_3d,
-        lambda series: TSMAX(series, 5),
-    )
+    vwap_change_3d = DELTA(data["vwap"], 3)
+    maximum_change_5d = TSMAX(vwap_change_3d, 5)
 
     return (
-        -_cross_sectional_rank(data, maximum_change_5d)
+        -RANK(maximum_change_5d)
     ).rename("Alpha41")
 
 
@@ -790,20 +909,15 @@ def alpha42(data: pd.DataFrame) -> pd.Series:
         * CORR(HIGH, VOLUME, 10)
     )
     """
-    high_std_10d = _by_symbol(
-        data,
-        data["high"],
-        lambda series: STD(series, 10),
-    )
-    high_volume_correlation = _by_symbol_pair(
-        data,
+    high_std_10d = STD(data["high"], 10)
+    high_volume_correlation = CORR(
         data["high"],
         data["volume"],
-        lambda high, volume: CORR(high, volume, 10),
+        10,
     )
 
     return (
-        -_cross_sectional_rank(data, high_std_10d)
+        -RANK(high_std_10d)
         * high_volume_correlation
     ).rename("Alpha42")
 
@@ -884,6 +998,28 @@ def alpha44(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha44")
 
 
+def alpha45(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha45 = (RANK(DELTA((((CLOSE*0.6)+(OPEN*0.4))),1))
+    *RANK(CORR(VWAP,MEAN(VOLUME,150),15)))
+    """
+    blended_close = (
+        data["close"] * 0.6
+        + data["open"] * 0.4
+    )
+
+    return (
+        RANK(DELTA(blended_close, 1))
+        * RANK(
+            CORR(
+                data["vwap"],
+                MEAN(data["volume"], 150),
+                15,
+            )
+        )
+    ).rename("Alpha45")
+
+
 def alpha46(data: pd.DataFrame) -> pd.Series:
     """
     Alpha46 = (
@@ -932,41 +1068,18 @@ def alpha48(data: pd.DataFrame) -> pd.Series:
         / SUM(VOLUME, 20)
     )
     """
-    previous_close_1d = _by_symbol(
-        data,
-        data["close"],
-        lambda series: DELAY(series, 1),
-    )
-    previous_close_2d = _by_symbol(
-        data,
-        data["close"],
-        lambda series: DELAY(series, 2),
-    )
-    previous_close_3d = _by_symbol(
-        data,
-        data["close"],
-        lambda series: DELAY(series, 3),
-    )
+    previous_close_1d = DELAY(data["close"], 1)
+    previous_close_2d = DELAY(data["close"], 2)
+    previous_close_3d = DELAY(data["close"], 3)
 
     direction_signal = (
         SIGN(data["close"] - previous_close_1d)
         + SIGN(previous_close_1d - previous_close_2d)
         + SIGN(previous_close_2d - previous_close_3d)
     )
-    ranked_direction = _cross_sectional_rank(
-        data,
-        direction_signal,
-    )
-    volume_sum_5d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: SUM(series, 5),
-    )
-    volume_sum_20d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: SUM(series, 20),
-    ).replace(0, np.nan)
+    ranked_direction = RANK(direction_signal)
+    volume_sum_5d = SUM(data["volume"], 5)
+    volume_sum_20d = SUM(data["volume"], 20).replace(0, np.nan)
 
     return (
         -ranked_direction
@@ -1101,16 +1214,11 @@ def alpha54(data: pd.DataFrame) -> pd.Series:
     )
     """
     candle_body = data["close"] - data["open"]
-    body_std_10d = _by_symbol(
-        data,
-        ABS(candle_body),
-        lambda series: STD(series, 10),
-    )
-    close_open_correlation = _by_symbol_pair(
-        data,
+    body_std_10d = STD(ABS(candle_body), 10)
+    close_open_correlation = CORR(
         data["close"],
         data["open"],
-        lambda close, open_price: CORR(close, open_price, 10),
+        10,
     )
     signal = (
         body_std_10d
@@ -1119,7 +1227,7 @@ def alpha54(data: pd.DataFrame) -> pd.Series:
     )
 
     return (
-        -_cross_sectional_rank(data, signal)
+        -RANK(signal)
     ).rename("Alpha54")
 
 
@@ -1131,6 +1239,26 @@ def alpha55(data: pd.DataFrame) -> pd.Series:
         alpha137(data),
         20,
     ).rename("Alpha55")
+
+
+def alpha56(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha56 = (RANK((OPEN-TSMIN(OPEN,12)))<RANK((RANK(CORR(
+    SUM(((HIGH+LOW)/2),19),SUM(MEAN(VOLUME,40),19),13))^5)))
+    """
+    left_rank = RANK(
+        data["open"] - TSMIN(data["open"], 12)
+    )
+    correlation_rank = RANK(
+        CORR(
+            SUM((data["high"] + data["low"]) / 2, 19),
+            SUM(MEAN(data["volume"], 40), 19),
+            13,
+        )
+    )
+    right_rank = RANK(correlation_rank ** 5)
+
+    return (left_rank < right_rank).rename("Alpha56")
 
 
 def alpha57(data: pd.DataFrame) -> pd.Series:
@@ -1222,6 +1350,33 @@ def alpha60(data: pd.DataFrame) -> pd.Series:
     return SUM(weighted_clv, 20).rename('Alpha60')
 
 
+def alpha61(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha61 = (MAX(RANK(DECAYLINEAR(DELTA(VWAP,1),12)),
+    RANK(DECAYLINEAR(RANK(CORR((LOW),MEAN(VOLUME,80),8)),17)))*-1)
+    """
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(data["vwap"], 1),
+            12,
+        )
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            RANK(
+                CORR(
+                    data["low"],
+                    MEAN(data["volume"], 80),
+                    8,
+                )
+            ),
+            17,
+        )
+    )
+
+    return (-MAX(first_rank, second_rank)).rename("Alpha61")
+
+
 def alpha62(data: pd.DataFrame) -> pd.Series:
     """
     Alpha62 = -CORR(
@@ -1230,15 +1385,11 @@ def alpha62(data: pd.DataFrame) -> pd.Series:
         5,
     )
     """
-    ranked_volume = _cross_sectional_rank(
-        data,
-        data["volume"],
-    )
-    high_volume_rank_correlation = _by_symbol_pair(
-        data,
+    ranked_volume = RANK(data["volume"])
+    high_volume_rank_correlation = CORR(
         data["high"],
         ranked_volume,
-        lambda high, volume: CORR(high, volume, 5),
+        5,
     )
 
     return (
@@ -1266,6 +1417,60 @@ def alpha63(data: pd.DataFrame) -> pd.Series:
         * 100
     ).rename('Alpha63')
 
+
+
+def alpha64(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha64 = (
+        MAX(
+            RANK(
+                DECAYLINEAR(
+                    CORR(RANK(VWAP), RANK(VOLUME), 4),
+                    4,
+                )
+            ),
+            RANK(
+                DECAYLINEAR(
+                    MAX(
+                        CORR(
+                            RANK(CLOSE),
+                            RANK(MEAN(VOLUME, 60)),
+                            4,
+                        ),
+                        13,
+                    ),
+                    14,
+                )
+            ),
+        )
+        * -1
+    )
+    """
+    first_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                RANK(data["vwap"]),
+                RANK(data["volume"]),
+                4,
+            ),
+            4,
+        )
+    )
+    close_volume_correlation = CORR(
+        RANK(data["close"]),
+        RANK(MEAN(data["volume"], 60)),
+        4,
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            MAX(close_volume_correlation, 13),
+            14,
+        )
+    )
+
+    return (
+        -MAX(first_rank, second_rank)
+    ).rename("Alpha64")
 
 
 def alpha65(data: pd.DataFrame) -> pd.Series:
@@ -1467,6 +1672,66 @@ def alpha72(data: pd.DataFrame) -> pd.Series:
     ).rename('Alpha72')
 
 
+def alpha73(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha73 = ((TSRANK(DECAYLINEAR(DECAYLINEAR(CORR((CLOSE),
+    VOLUME,10),16),4),5)-RANK(DECAYLINEAR(CORR(VWAP,
+    MEAN(VOLUME,30),4),3)))*-1)
+    """
+    left_rank = TSRANK(
+        DECAYLINEAR(
+            DECAYLINEAR(
+                CORR(
+                    data["close"],
+                    data["volume"],
+                    10,
+                ),
+                16,
+            ),
+            4,
+        ),
+        5,
+    )
+    right_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                data["vwap"],
+                MEAN(data["volume"], 30),
+                4,
+            ),
+            3,
+        )
+    )
+
+    return (-(left_rank - right_rank)).rename("Alpha73")
+
+
+def alpha74(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha74 = (RANK(CORR(SUM(((LOW*0.35)+(VWAP*0.65)),20),
+    SUM(MEAN(VOLUME,40),20),7))+RANK(CORR(RANK(VWAP),
+    RANK(VOLUME),6)))
+    """
+    blended_price = (
+        data["low"] * 0.35
+        + data["vwap"] * 0.65
+    )
+    first_rank = RANK(
+        CORR(
+            SUM(blended_price, 20),
+            SUM(MEAN(data["volume"], 40), 20),
+            7,
+        )
+    )
+    second_rank = RANK(
+        CORR(
+            RANK(data["vwap"]),
+            RANK(data["volume"]),
+            6,
+        )
+    )
+
+    return (first_rank + second_rank).rename("Alpha74")
 
 
 def alpha75(data: pd.DataFrame) -> pd.Series:
@@ -1520,6 +1785,36 @@ def alpha76(data: pd.DataFrame) -> pd.Series:
         STD(ABS((data['close'] / prev_close_1d) - 1) / data['volume'], 20)
         / MEAN(ABS((data['close'] / prev_close_1d) - 1) / data['volume'], 20)
     ).rename('Alpha76')
+
+
+def alpha77(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha77 = MIN(RANK(DECAYLINEAR(((((HIGH+LOW)/2)+HIGH)
+    -(VWAP+HIGH)),20)),RANK(DECAYLINEAR(CORR(((HIGH+LOW)/2),
+    MEAN(VOLUME,40),3),6)))
+    """
+    midpoint_price = (
+        data["high"] + data["low"]
+    ) / 2
+    first_signal = (
+        (midpoint_price + data["high"])
+        - (data["vwap"] + data["high"])
+    )
+    first_rank = RANK(
+        DECAYLINEAR(first_signal, 20)
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                midpoint_price,
+                MEAN(data["volume"], 40),
+                3,
+            ),
+            6,
+        )
+    )
+
+    return MIN(first_rank, second_rank).rename("Alpha77")
 
 
 def alpha78(data: pd.DataFrame) -> pd.Series:
@@ -1633,23 +1928,16 @@ def alpha83(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    ranked_high = _cross_sectional_rank(
-        data,
-        data["high"],
-    )
-    ranked_volume = _cross_sectional_rank(
-        data,
-        data["volume"],
-    )
-    rolling_covariance = _by_symbol_pair(
-        data,
+    ranked_high = RANK(data["high"])
+    ranked_volume = RANK(data["volume"])
+    rolling_covariance = COVIANCE(
         ranked_high,
         ranked_volume,
-        lambda high, volume: COVIANCE(high, volume, 5),
+        5,
     )
 
     return (
-        -_cross_sectional_rank(data, rolling_covariance)
+        -RANK(rolling_covariance)
     ).rename("Alpha83")
 
 
@@ -1746,6 +2034,38 @@ def alpha86(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha86")
 
 
+def alpha87(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha87 = ((RANK(DECAYLINEAR(DELTA(VWAP,4),7))
+    +TSRANK(DECAYLINEAR(((((LOW*0.9)+(LOW*0.1))-VWAP)
+    /(OPEN-((HIGH+LOW)/2))),11),7))*-1)
+    """
+    relative_price_denominator = (
+        data["open"]
+        - (data["high"] + data["low"]) / 2
+    ).replace(0, np.nan)
+    relative_price = (
+        (
+            data["low"] * 0.9
+            + data["low"] * 0.1
+            - data["vwap"]
+        )
+        / relative_price_denominator
+    )
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(data["vwap"], 4),
+            7,
+        )
+    )
+    second_rank = TSRANK(
+        DECAYLINEAR(relative_price, 11),
+        7,
+    )
+
+    return (-(first_rank + second_rank)).rename("Alpha87")
+
+
 def alpha88(data: pd.DataFrame) -> pd.Series:
     """
     Alpha88 = (
@@ -1798,24 +2118,74 @@ def alpha90(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    ranked_vwap = _cross_sectional_rank(
-        data,
-        data["vwap"],
-    )
-    ranked_volume = _cross_sectional_rank(
-        data,
-        data["volume"],
-    )
-    rank_correlation = _by_symbol_pair(
-        data,
+    ranked_vwap = RANK(data["vwap"])
+    ranked_volume = RANK(data["volume"])
+    rank_correlation = CORR(
         ranked_vwap,
         ranked_volume,
-        lambda vwap, volume: CORR(vwap, volume, 5),
+        5,
     )
 
     return (
-        -_cross_sectional_rank(data, rank_correlation)
+        -RANK(rank_correlation)
     ).rename("Alpha90")
+
+
+def alpha91(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha91 = (
+        RANK(CLOSE - MAX(CLOSE, 5))
+        * RANK(CORR(MEAN(VOLUME, 40), LOW, 5))
+    ) * -1
+    """
+    close_deviation = (
+        data["close"] - MAX(data["close"], 5)
+    )
+    volume_low_correlation = CORR(
+        MEAN(data["volume"], 40),
+        data["low"],
+        5,
+    )
+
+    return (
+        -(
+            RANK(close_deviation)
+            * RANK(volume_low_correlation)
+        )
+    ).rename("Alpha91")
+
+
+def alpha92(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha92 = (MAX(RANK(DECAYLINEAR(DELTA(((CLOSE*0.35)
+    +(VWAP*0.65)),2),3)),TSRANK(DECAYLINEAR(ABS(CORR(
+    (MEAN(VOLUME,180)),CLOSE,13)),5),15))*-1)
+    """
+    blended_price = (
+        data["close"] * 0.35
+        + data["vwap"] * 0.65
+    )
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(blended_price, 2),
+            3,
+        )
+    )
+    second_rank = TSRANK(
+        DECAYLINEAR(
+            ABS(
+                CORR(
+                    MEAN(data["volume"], 180),
+                    data["close"],
+                    13,
+                )
+            ),
+            5,
+        ),
+        15,
+    )
+
+    return (-MAX(first_rank, second_rank)).rename("Alpha92")
 
 
 def alpha93(data: pd.DataFrame) -> pd.Series:
@@ -1962,23 +2332,16 @@ def alpha99(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    ranked_close = _cross_sectional_rank(
-        data,
-        data["close"],
-    )
-    ranked_volume = _cross_sectional_rank(
-        data,
-        data["volume"],
-    )
-    rolling_covariance = _by_symbol_pair(
-        data,
+    ranked_close = RANK(data["close"])
+    ranked_volume = RANK(data["volume"])
+    rolling_covariance = COVIANCE(
         ranked_close,
         ranked_volume,
-        lambda close, volume: COVIANCE(close, volume, 5),
+        5,
     )
 
     return (
-        -_cross_sectional_rank(data, rolling_covariance)
+        -RANK(rolling_covariance)
     ).rename("Alpha99")
 
 
@@ -1987,6 +2350,33 @@ def alpha100(data: pd.DataFrame) -> pd.Series:
     Alpha100 = STD(VOLUME, 20)
     """
     return(STD(data['volume'], 20)).rename('Alpha100')
+
+
+def alpha101(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha101 = ((RANK(CORR(CLOSE,SUM(MEAN(VOLUME,30),37),15))
+    <RANK(CORR(RANK(((HIGH*0.1)+(VWAP*0.9))),RANK(VOLUME),11)))*-1)
+    """
+    left_rank = RANK(
+        CORR(
+            data["close"],
+            SUM(MEAN(data["volume"], 30), 37),
+            15,
+        )
+    )
+    weighted_price = (
+        data["high"] * 0.1
+        + data["vwap"] * 0.9
+    )
+    right_rank = RANK(
+        CORR(
+            RANK(weighted_price),
+            RANK(data["volume"]),
+            11,
+        )
+    )
+
+    return ((left_rank < right_rank) * -1).rename("Alpha101")
 
 
 def alpha102(data: pd.DataFrame) -> pd.Series:
@@ -2023,6 +2413,24 @@ def alpha103(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha103")
 
 
+def alpha104(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha104 = (-1*(DELTA(CORR(HIGH,VOLUME,5),5)
+    *RANK(STD(CLOSE,20))))
+    """
+    correlation_change = DELTA(
+        CORR(data["high"], data["volume"], 5),
+        5,
+    )
+    ranked_close_volatility = RANK(
+        STD(data["close"], 20)
+    )
+
+    return (
+        -(correlation_change * ranked_close_volatility)
+    ).rename("Alpha104")
+
+
 def alpha105(data: pd.DataFrame) -> pd.Series:
     """
     Alpha105 = -CORR(
@@ -2031,19 +2439,12 @@ def alpha105(data: pd.DataFrame) -> pd.Series:
         10,
     )
     """
-    ranked_open = _cross_sectional_rank(
-        data,
-        data["open"],
-    )
-    ranked_volume = _cross_sectional_rank(
-        data,
-        data["volume"],
-    )
-    rank_correlation = _by_symbol_pair(
-        data,
+    ranked_open = RANK(data["open"])
+    ranked_volume = RANK(data["volume"])
+    rank_correlation = CORR(
         ranked_open,
         ranked_volume,
-        lambda open_price, volume: CORR(open_price, volume, 10),
+        10,
     )
 
     return (-rank_correlation).rename("Alpha105")
@@ -2067,36 +2468,45 @@ def alpha107(data: pd.DataFrame) -> pd.Series:
         * RANK(OPEN - DELAY(LOW, 1))
     )
     """
-    previous_high = _by_symbol(
-        data,
-        data["high"],
-        lambda series: DELAY(series, 1),
-    )
-    previous_close = _by_symbol(
-        data,
-        data["close"],
-        lambda series: DELAY(series, 1),
-    )
-    previous_low = _by_symbol(
-        data,
-        data["low"],
-        lambda series: DELAY(series, 1),
-    )
+    previous_high = DELAY(data["high"], 1)
+    previous_close = DELAY(data["close"], 1)
+    previous_low = DELAY(data["low"], 1)
 
     return (
-        -_cross_sectional_rank(
-            data,
+        -RANK(
             data["open"] - previous_high,
         )
-        * _cross_sectional_rank(
-            data,
+        * RANK(
             data["open"] - previous_close,
         )
-        * _cross_sectional_rank(
-            data,
+        * RANK(
             data["open"] - previous_low,
         )
     ).rename("Alpha107")
+
+
+def alpha108(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha108 = (
+        RANK(HIGH - MIN(HIGH, 2))
+        ^ RANK(CORR(VWAP, MEAN(VOLUME, 120), 6))
+    ) * -1
+    """
+    high_deviation = (
+        data["high"] - MIN(data["high"], 2)
+    )
+    vwap_volume_correlation = CORR(
+        data["vwap"],
+        MEAN(data["volume"], 120),
+        6,
+    )
+
+    return (
+        -(
+            RANK(high_deviation)
+            ** RANK(vwap_volume_correlation)
+        )
+    ).rename("Alpha108")
 
 
 def alpha109(data: pd.DataFrame) -> pd.Series:
@@ -2214,6 +2624,89 @@ def alpha112(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha112")
 
 
+def alpha113(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha113 = (-1*((RANK((SUM(DELAY(CLOSE,5),20)/20))
+    *CORR(CLOSE,VOLUME,2))*RANK(CORR(SUM(CLOSE,5),
+    SUM(CLOSE,20),2))))
+    """
+    first_rank = RANK(
+        SUM(DELAY(data["close"], 5), 20) / 20
+    )
+    second_signal = CORR(
+        data["close"],
+        data["volume"],
+        2,
+    )
+    third_rank = RANK(
+        CORR(
+            SUM(data["close"], 5),
+            SUM(data["close"], 20),
+            2,
+        )
+    )
+
+    return (-(first_rank * second_signal * third_rank)).rename(
+        "Alpha113"
+    )
+
+
+def alpha114(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha114 = ((RANK(DELAY(((HIGH-LOW)/(SUM(CLOSE,5)/5)),2))
+    *RANK(RANK(VOLUME)))/(((HIGH-LOW)/(SUM(CLOSE,5)/5))
+    /(VWAP-CLOSE)))
+    """
+    average_close_5d = (
+        SUM(data["close"], 5) / 5
+    ).replace(0, np.nan)
+    range_ratio = (
+        data["high"] - data["low"]
+    ) / average_close_5d
+    vwap_close_gap = (
+        data["vwap"] - data["close"]
+    ).replace(0, np.nan)
+    denominator = (
+        range_ratio / vwap_close_gap
+    ).replace(0, np.nan)
+
+    result = (
+        RANK(DELAY(range_ratio, 2))
+        * RANK(RANK(data["volume"]))
+        / denominator
+    )
+
+    return result.replace(
+        [np.inf, -np.inf],
+        np.nan,
+    ).rename("Alpha114")
+
+
+def alpha115(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha115 = (RANK(CORR(((HIGH*0.9)+(CLOSE*0.1)),
+    MEAN(VOLUME,30),10))^RANK(CORR(TSRANK(((HIGH+LOW)/2),4),
+    TSRANK(VOLUME,10),7)))
+    """
+    first_rank = RANK(
+        CORR(
+            data["high"] * 0.9
+            + data["close"] * 0.1,
+            MEAN(data["volume"], 30),
+            10,
+        )
+    )
+    second_rank = RANK(
+        CORR(
+            TSRANK((data["high"] + data["low"]) / 2, 4),
+            TSRANK(data["volume"], 10),
+            7,
+        )
+    )
+
+    return (first_rank ** second_rank).rename("Alpha115")
+
+
 def alpha116(data: pd.DataFrame) -> pd.Series:
     """
     Alpha116 = REGBETA(
@@ -2262,6 +2755,63 @@ def alpha118(data: pd.DataFrame) -> pd.Series:
     ).rename('Alpha118')
 
 
+def alpha119(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha119 = (
+        RANK(
+            DECAYLINEAR(
+                CORR(VWAP, SUM(MEAN(VOLUME, 5), 26), 5),
+                7,
+            )
+        )
+        - RANK(
+            DECAYLINEAR(
+                TSRANK(
+                    MIN(
+                        CORR(
+                            RANK(OPEN),
+                            RANK(MEAN(VOLUME, 15)),
+                            21,
+                        ),
+                        9,
+                    ),
+                    7,
+                ),
+                8,
+            )
+        )
+    )
+    """
+    first_rank = RANK(
+        DECAYLINEAR(
+            CORR(
+                data["vwap"],
+                SUM(MEAN(data["volume"], 5), 26),
+                5,
+            ),
+            7,
+        )
+    )
+    ranked_open_volume_correlation = CORR(
+        RANK(data["open"]),
+        RANK(MEAN(data["volume"], 15)),
+        21,
+    )
+    second_rank = RANK(
+        DECAYLINEAR(
+            TSRANK(
+                MIN(ranked_open_volume_correlation, 9),
+                7,
+            ),
+            8,
+        )
+    )
+
+    return (
+        first_rank - second_rank
+    ).rename("Alpha119")
+
+
 def alpha120(data: pd.DataFrame) -> pd.Series:
     """
     Alpha120 = (
@@ -2269,18 +2819,51 @@ def alpha120(data: pd.DataFrame) -> pd.Series:
         / RANK(VWAP + CLOSE)
     )
     """
-    ranked_difference = _cross_sectional_rank(
-        data,
+    ranked_difference = RANK(
         data["vwap"] - data["close"],
     )
-    ranked_sum = _cross_sectional_rank(
-        data,
+    ranked_sum = RANK(
         data["vwap"] + data["close"],
     ).replace(0, np.nan)
 
     return (
         ranked_difference / ranked_sum
     ).rename("Alpha120")
+
+
+def alpha121(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha121 = (
+        RANK(VWAP - MIN(VWAP, 12))
+        ^ TSRANK(
+            CORR(
+                TSRANK(VWAP, 20),
+                TSRANK(MEAN(VOLUME, 60), 2),
+                18,
+            ),
+            3,
+        )
+    ) * -1
+    """
+    vwap_deviation = (
+        data["vwap"] - MIN(data["vwap"], 12)
+    )
+    rank_correlation = CORR(
+        TSRANK(data["vwap"], 20),
+        TSRANK(MEAN(data["volume"], 60), 2),
+        18,
+    )
+    correlation_time_rank = TSRANK(
+        rank_correlation,
+        3,
+    )
+
+    return (
+        -(
+            RANK(vwap_deviation)
+            ** correlation_time_rank
+        )
+    ).rename("Alpha121")
 
 
 def alpha122(data: pd.DataFrame) -> pd.Series:
@@ -2329,6 +2912,73 @@ def alpha122(data: pd.DataFrame) -> pd.Series:
         (smoothed_log_close - previous_smoothed_log_close)
         / previous_smoothed_log_close
     ).rename("Alpha122")
+
+
+def alpha123(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha123 = ((RANK(CORR(SUM(((HIGH+LOW)/2),20),
+    SUM(MEAN(VOLUME,60),20),9))<RANK(CORR(LOW,VOLUME,6)))*-1)
+    """
+    left_rank = RANK(
+        CORR(
+            SUM((data["high"] + data["low"]) / 2, 20),
+            SUM(MEAN(data["volume"], 60), 20),
+            9,
+        )
+    )
+    right_rank = RANK(
+        CORR(
+            data["low"],
+            data["volume"],
+            6,
+        )
+    )
+
+    return ((left_rank < right_rank) * -1).rename("Alpha123")
+
+
+def alpha124(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha124 = (CLOSE-VWAP)/DECAYLINEAR(RANK(TSMAX(CLOSE,30)),2)
+    """
+    denominator = DECAYLINEAR(
+        RANK(TSMAX(data["close"], 30)),
+        2,
+    ).replace(0, np.nan)
+
+    return (
+        (data["close"] - data["vwap"]) / denominator
+    ).rename("Alpha124")
+
+
+def alpha125(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha125 = (RANK(DECAYLINEAR(CORR((VWAP),
+    MEAN(VOLUME,80),17),20))/RANK(DECAYLINEAR(
+    DELTA(((CLOSE*0.5)+(VWAP*0.5)),3),16)))
+    """
+    numerator = RANK(
+        DECAYLINEAR(
+            CORR(
+                data["vwap"],
+                MEAN(data["volume"], 80),
+                17,
+            ),
+            20,
+        )
+    )
+    blended_price = (
+        data["close"] * 0.5
+        + data["vwap"] * 0.5
+    )
+    denominator = RANK(
+        DECAYLINEAR(
+            DELTA(blended_price, 3),
+            16,
+        )
+    ).replace(0, np.nan)
+
+    return (numerator / denominator).rename("Alpha125")
 
 
 def alpha126(data: pd.DataFrame) -> pd.Series:
@@ -2441,6 +3091,60 @@ def alpha129(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha129")
 
 
+def alpha130(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha130 = (RANK(DECAYLINEAR(CORR(((HIGH+LOW)/2),
+    MEAN(VOLUME,40),9),10))/RANK(DECAYLINEAR(
+    CORR(RANK(VWAP),RANK(VOLUME),7),3)))
+    """
+    numerator = RANK(
+        DECAYLINEAR(
+            CORR(
+                (data["high"] + data["low"]) / 2,
+                MEAN(data["volume"], 40),
+                9,
+            ),
+            10,
+        )
+    )
+    denominator = RANK(
+        DECAYLINEAR(
+            CORR(
+                RANK(data["vwap"]),
+                RANK(data["volume"]),
+                7,
+            ),
+            3,
+        )
+    ).replace(0, np.nan)
+
+    return (numerator / denominator).rename("Alpha130")
+
+
+def alpha131(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha131 = (
+        RANK(DELTA(VWAP, 1))
+        ^ TSRANK(CORR(CLOSE, MEAN(VOLUME, 50), 18), 18)
+    )
+    """
+    ranked_vwap_change = RANK(
+        DELTA(data["vwap"], 1)
+    )
+    correlation_time_rank = TSRANK(
+        CORR(
+            data["close"],
+            MEAN(data["volume"], 50),
+            18,
+        ),
+        18,
+    )
+
+    return (
+        ranked_vwap_change ** correlation_time_rank
+    ).rename("Alpha131")
+
+
 def alpha132(data: pd.DataFrame) -> pd.Series:
     """
     Alpha132 = MEAN(AMOUNT, 20)
@@ -2513,25 +3217,16 @@ def alpha136(data: pd.DataFrame) -> pd.Series:
         * CORR(OPEN, VOLUME, 10)
     )
     """
-    daily_return = _by_symbol(
-        data,
-        data["close"],
-        RET,
-    )
-    return_change_3d = _by_symbol(
-        data,
-        daily_return,
-        lambda series: DELTA(series, 3),
-    )
-    open_volume_correlation = _by_symbol_pair(
-        data,
+    daily_return = RET(data["close"])
+    return_change_3d = DELTA(daily_return, 3)
+    open_volume_correlation = CORR(
         data["open"],
         data["volume"],
-        lambda open_price, volume: CORR(open_price, volume, 10),
+        10,
     )
 
     return (
-        -_cross_sectional_rank(data, return_change_3d)
+        -RANK(return_change_3d)
         * open_volume_correlation
     ).rename("Alpha136")
 
@@ -2635,6 +3330,39 @@ def alpha137(data: pd.DataFrame) -> pd.Series:
     ).rename("Alpha137")
 
 
+def alpha138(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha138 = ((RANK(DECAYLINEAR(DELTA((((LOW*0.7)
+    +(VWAP*0.3))),3),20))-TSRANK(DECAYLINEAR(
+    TSRANK(CORR(TSRANK(LOW,8),TSRANK(MEAN(VOLUME,60),17),5),19),
+    16),7))*-1)
+    """
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(
+                data["low"] * 0.7
+                + data["vwap"] * 0.3,
+                3,
+            ),
+            20,
+        )
+    )
+    nested_correlation = TSRANK(
+        CORR(
+            TSRANK(data["low"], 8),
+            TSRANK(MEAN(data["volume"], 60), 17),
+            5,
+        ),
+        19,
+    )
+    second_rank = TSRANK(
+        DECAYLINEAR(nested_correlation, 16),
+        7,
+    )
+
+    return (-(first_rank - second_rank)).rename("Alpha138")
+
+
 def alpha139(data: pd.DataFrame) -> pd.Series:
     """
     Alpha139 = -CORR(OPEN, VOLUME, 10)
@@ -2642,6 +3370,36 @@ def alpha139(data: pd.DataFrame) -> pd.Series:
     return(
         -CORR(data['open'], data['volume'], 10)
     ).rename('Alpha139')
+
+
+def alpha140(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha140 = MIN(RANK(DECAYLINEAR(((RANK(OPEN)+RANK(LOW))
+    -(RANK(HIGH)+RANK(CLOSE))),8)),TSRANK(DECAYLINEAR(
+    CORR(TSRANK(CLOSE,8),TSRANK(MEAN(VOLUME,60),20),8),7),3))
+    """
+    ranked_price_signal = (
+        RANK(data["open"])
+        + RANK(data["low"])
+        - RANK(data["high"])
+        - RANK(data["close"])
+    )
+    first_rank = RANK(
+        DECAYLINEAR(ranked_price_signal, 8)
+    )
+    second_rank = TSRANK(
+        DECAYLINEAR(
+            CORR(
+                TSRANK(data["close"], 8),
+                TSRANK(MEAN(data["volume"], 60), 20),
+                8,
+            ),
+            7,
+        ),
+        3,
+    )
+
+    return MIN(first_rank, second_rank).rename("Alpha140")
 
 
 def alpha141(data: pd.DataFrame) -> pd.Series:
@@ -2654,29 +3412,41 @@ def alpha141(data: pd.DataFrame) -> pd.Series:
         )
     )
     """
-    average_volume_15d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: MEAN(series, 15),
-    )
-    ranked_high = _cross_sectional_rank(
-        data,
-        data["high"],
-    )
-    ranked_average_volume = _cross_sectional_rank(
-        data,
-        average_volume_15d,
-    )
-    rank_correlation = _by_symbol_pair(
-        data,
+    average_volume_15d = MEAN(data["volume"], 15)
+    ranked_high = RANK(data["high"])
+    ranked_average_volume = RANK(average_volume_15d)
+    rank_correlation = CORR(
         ranked_high,
         ranked_average_volume,
-        lambda high, volume: CORR(high, volume, 9),
+        9,
     )
 
     return (
-        -_cross_sectional_rank(data, rank_correlation)
+        -RANK(rank_correlation)
     ).rename("Alpha141")
+
+
+def alpha142(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha142 = (((-1*RANK(TSRANK(CLOSE,10)))
+    *RANK(DELTA(DELTA(CLOSE,1),1)))*RANK(
+    TSRANK((VOLUME/MEAN(VOLUME,20)),5)))
+    """
+    average_volume_20d = MEAN(
+        data["volume"],
+        20,
+    ).replace(0, np.nan)
+
+    return (
+        -RANK(TSRANK(data["close"], 10))
+        * RANK(DELTA(DELTA(data["close"], 1), 1))
+        * RANK(
+            TSRANK(
+                data["volume"] / average_volume_20d,
+                5,
+            )
+        )
+    ).rename("Alpha142")
 
 
 def alpha143(data: pd.DataFrame) -> pd.Series:
@@ -2848,33 +3618,16 @@ def alpha148(data: pd.DataFrame) -> pd.Series:
         < RANK(OPEN - TSMIN(OPEN, 14))
     ) * -1
     """
-    average_volume_60d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: MEAN(series, 60),
-    )
-    summed_average_volume = _by_symbol(
-        data,
-        average_volume_60d,
-        lambda series: SUM(series, 9),
-    )
-    open_volume_correlation = _by_symbol_pair(
-        data,
+    average_volume_60d = MEAN(data["volume"], 60)
+    summed_average_volume = SUM(average_volume_60d, 9)
+    open_volume_correlation = CORR(
         data["open"],
         summed_average_volume,
-        lambda open_price, volume: CORR(open_price, volume, 6),
+        6,
     )
-    correlation_rank = _cross_sectional_rank(
-        data,
-        open_volume_correlation,
-    )
-    minimum_open_14d = _by_symbol(
-        data,
-        data["open"],
-        lambda series: TSMIN(series, 14),
-    )
-    open_range_rank = _cross_sectional_rank(
-        data,
+    correlation_rank = RANK(open_volume_correlation)
+    minimum_open_14d = TSMIN(data["open"], 14)
+    open_range_rank = RANK(
         data["open"] - minimum_open_14d,
     )
     has_required_history = (
@@ -3072,6 +3825,105 @@ def alpha155(data: pd.DataFrame) -> pd.Series:
 
     return(sma_volume_13d - sma_volume_27d - sma_change).rename('Alpha155')
 
+
+def alpha156(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha156 = (MAX(RANK(DECAYLINEAR(DELTA(VWAP,5),3)),
+    RANK(DECAYLINEAR(((DELTA(((OPEN*0.15)+(LOW*0.85)),2)
+    /((OPEN*0.15)+(LOW*0.85)))*-1),3)))*-1)
+    """
+    first_rank = RANK(
+        DECAYLINEAR(
+            DELTA(data["vwap"], 5),
+            3,
+        )
+    )
+    blended_price = (
+        data["open"] * 0.15
+        + data["low"] * 0.85
+    )
+    nonzero_blended_price = blended_price.replace(0, np.nan)
+    second_rank = RANK(
+        DECAYLINEAR(
+            (
+                DELTA(blended_price, 2)
+                / nonzero_blended_price
+            ) * -1,
+            3,
+        )
+    )
+
+    return (-MAX(first_rank, second_rank)).rename("Alpha156")
+
+
+def alpha157(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha157 = (
+        MIN(
+            PROD(
+                RANK(
+                    RANK(
+                        LOG(
+                            SUM(
+                                TSMIN(
+                                    RANK(
+                                        RANK(
+                                            -RANK(
+                                                DELTA(CLOSE - 1, 5)
+                                            )
+                                        )
+                                    ),
+                                    2,
+                                ),
+                                1,
+                            )
+                        )
+                    )
+                ),
+                1,
+            ),
+            5,
+        )
+        + TSRANK(DELAY(-RET, 6), 5)
+    )
+    """
+    close_change = DELTA(
+        data["close"] - 1,
+        5,
+    )
+    nested_rank = RANK(
+        RANK(
+            -RANK(close_change)
+        )
+    )
+    minimum_rank_2d = TSMIN(
+        nested_rank,
+        2,
+    )
+    logged_rank_sum = LOG(
+        SUM(minimum_rank_2d, 1)
+    )
+    ranked_log_sum = RANK(
+        RANK(logged_rank_sum)
+    )
+    product_rank = PROD(
+        ranked_log_sum,
+        1,
+    )
+    return_time_rank = TSRANK(
+        DELAY(
+            -RET(data["close"]),
+            6,
+        ),
+        5,
+    )
+
+    return (
+        MIN(product_rank, 5)
+        + return_time_rank
+    ).rename("Alpha157")
+
+
 def alpha158(data: pd.DataFrame) -> pd.Series:
     """
     Alpha158 = (
@@ -3254,16 +4106,8 @@ def alpha163(data: pd.DataFrame) -> pd.Series:
         * (HIGH - CLOSE)
     )
     """
-    daily_return = _by_symbol(
-        data,
-        data["close"],
-        RET,
-    )
-    average_volume_20d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: MEAN(series, 20),
-    )
+    daily_return = RET(data["close"])
+    average_volume_20d = MEAN(data["volume"], 20)
     signal = (
         -daily_return
         * average_volume_20d
@@ -3271,7 +4115,7 @@ def alpha163(data: pd.DataFrame) -> pd.Series:
         * (data["high"] - data["close"])
     )
 
-    return _cross_sectional_rank(data, signal).rename("Alpha163")
+    return RANK(signal).rename("Alpha163")
 
 
 def alpha164(data: pd.DataFrame) -> pd.Series:
@@ -3471,31 +4315,16 @@ def alpha170(data: pd.DataFrame) -> pd.Series:
         - RANK(VWAP - DELAY(VWAP, 5))
     )
     """
-    average_volume_20d = _by_symbol(
-        data,
-        data["volume"],
-        lambda series: MEAN(series, 20),
-    ).replace(0, np.nan)
-    average_high_5d = _by_symbol(
-        data,
-        data["high"],
-        lambda series: MEAN(series, 5),
-    ).replace(0, np.nan)
-    previous_vwap_5d = _by_symbol(
-        data,
-        data["vwap"],
-        lambda series: DELAY(series, 5),
-    )
-    inverse_close_rank = _cross_sectional_rank(
-        data,
+    average_volume_20d = MEAN(data["volume"], 20).replace(0, np.nan)
+    average_high_5d = MEAN(data["high"], 5).replace(0, np.nan)
+    previous_vwap_5d = DELAY(data["vwap"], 5)
+    inverse_close_rank = RANK(
         1 / data["close"].replace(0, np.nan),
     )
-    high_close_rank = _cross_sectional_rank(
-        data,
+    high_close_rank = RANK(
         data["high"] - data["close"],
     )
-    vwap_change_rank = _cross_sectional_rank(
-        data,
+    vwap_change_rank = RANK(
         data["vwap"] - previous_vwap_5d,
     )
 
@@ -3677,6 +4506,24 @@ def alpha175(data: pd.DataFrame) -> pd.Series:
     return(MEAN(max_high_to_low, 6)).rename('Alpha175')
 
 
+def alpha176(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha176 = CORR(RANK(((CLOSE-TSMIN(LOW,12))
+    /(TSMAX(HIGH,12)-TSMIN(LOW,12)))),RANK(VOLUME),6)
+    """
+    minimum_low = TSMIN(data["low"], 12)
+    price_range = (
+        TSMAX(data["high"], 12) - minimum_low
+    ).replace(0, np.nan)
+    location = (
+        data["close"] - minimum_low
+    ) / price_range
+
+    return CORR(RANK(location), RANK(data["volume"]), 6).rename(
+        "Alpha176"
+    )
+
+
 def alpha177(data: pd.DataFrame) -> pd.Series:
     """
     Alpha177 = (
@@ -3706,6 +4553,23 @@ def alpha178(data: pd.DataFrame) -> pd.Series:
         / pre_close
         * data['volume']
     ).rename('Alpha178')
+
+
+def alpha179(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha179 = (RANK(CORR(VWAP,VOLUME,4))
+    *RANK(CORR(RANK(LOW),RANK(MEAN(VOLUME,50)),12)))
+    """
+    return (
+        RANK(CORR(data["vwap"], data["volume"], 4))
+        * RANK(
+            CORR(
+                RANK(data["low"]),
+                RANK(MEAN(data["volume"], 50)),
+                12,
+            )
+        )
+    ).rename("Alpha179")
 
 
 def alpha180(data: pd.DataFrame) -> pd.Series:
@@ -3747,6 +4611,51 @@ def alpha180(data: pd.DataFrame) -> pd.Series:
     )
 
     return result.rename("Alpha180")
+
+
+def alpha181(data: pd.DataFrame) -> pd.Series:
+    """
+    Alpha181 = (
+        SUM(
+            (
+                RET - MEAN(RET, 20)
+            )
+            - (
+                BANCHMARKINDEXCLOSE
+                - MEAN(BANCHMARKINDEXCLOSE, 20)
+            ) ^ 2,
+            20,
+        )
+        / SUM(
+            (
+                BANCHMARKINDEXCLOSE
+                - MEAN(BANCHMARKINDEXCLOSE, 20)
+            ) ^ 3
+        )
+    )
+    """
+    daily_return = RET(data["close"])
+    centered_return = (
+        daily_return - MEAN(daily_return, 20)
+    )
+    benchmark_deviation = (
+        data["benchmark_close"]
+        - MEAN(data["benchmark_close"], 20)
+    )
+    numerator = SUM(
+        centered_return - benchmark_deviation ** 2,
+        20,
+    )
+    denominator = SUM(
+        benchmark_deviation ** 3,
+    ).replace(0, np.nan)
+
+    return (
+        numerator / denominator
+    ).replace(
+        [np.inf, -np.inf],
+        np.nan,
+    ).rename("Alpha181")
 
 
 def alpha182(data: pd.DataFrame) -> pd.Series:
@@ -3824,21 +4733,16 @@ def alpha184(data: pd.DataFrame) -> pd.Series:
     )
     """
     candle_body = data["open"] - data["close"]
-    delayed_body = _by_symbol(
-        data,
-        candle_body,
-        lambda series: DELAY(series, 1),
-    )
-    body_close_correlation = _by_symbol_pair(
-        data,
+    delayed_body = DELAY(candle_body, 1)
+    body_close_correlation = CORR(
         delayed_body,
         data["close"],
-        lambda body, close: CORR(body, close, 200),
+        200,
     )
 
     return (
-        _cross_sectional_rank(data, body_close_correlation)
-        + _cross_sectional_rank(data, candle_body)
+        RANK(body_close_correlation)
+        + RANK(candle_body)
     ).rename("Alpha184")
 
 
@@ -3852,10 +4756,7 @@ def alpha185(data: pd.DataFrame) -> pd.Series:
         1 - data["open"] / data["close"]
     ) ** 2
 
-    return _cross_sectional_rank(
-        data,
-        intraday_reversal,
-    ).rename("Alpha185")
+    return RANK(intraday_reversal).rename("Alpha185")
 
 
 def alpha186(data: pd.DataFrame) -> pd.Series:
@@ -4005,46 +4906,91 @@ def alpha191(data: pd.DataFrame) -> pd.Series:
 
 PANEL_FACTORS = frozenset(
     {
+        "Alpha1",
+        "Alpha6",
+        "Alpha7",
         "Alpha8",
+        "Alpha10",
         "Alpha12",
+        "Alpha16",
+        "Alpha17",
+        "Alpha25",
+        "Alpha32",
+        "Alpha33",
+        "Alpha35",
+        "Alpha36",
         "Alpha37",
+        "Alpha39",
         "Alpha41",
         "Alpha42",
+        "Alpha45",
+        "Alpha48",
         "Alpha54",
+        "Alpha56",
+        "Alpha61",
         "Alpha62",
+        "Alpha64",
+        "Alpha73",
+        "Alpha74",
+        "Alpha77",
+        "Alpha83",
+        "Alpha87",
         "Alpha90",
+        "Alpha91",
+        "Alpha92",
+        "Alpha99",
+        "Alpha101",
+        "Alpha104",
         "Alpha105",
         "Alpha107",
+        "Alpha108",
+        "Alpha113",
+        "Alpha114",
+        "Alpha115",
+        "Alpha119",
         "Alpha120",
+        "Alpha121",
+        "Alpha123",
+        "Alpha124",
+        "Alpha125",
+        "Alpha130",
+        "Alpha131",
         "Alpha136",
+        "Alpha138",
+        "Alpha140",
         "Alpha141",
+        "Alpha142",
         "Alpha148",
+        "Alpha156",
+        "Alpha157",
         "Alpha163",
         "Alpha170",
+        "Alpha176",
+        "Alpha179",
         "Alpha184",
-        "Alpha6",
-        "Alpha25",
-        "Alpha48",
-        "Alpha83",
-        "Alpha99",
         "Alpha185",
     }
 )
 
 
 FACTORS = {
+    "Alpha1": alpha1,
     "Alpha2": alpha2,
     "Alpha3": alpha3,
     "Alpha4": alpha4,
     "Alpha5": alpha5,
     "Alpha6": alpha6,
+    "Alpha7": alpha7,
     "Alpha8": alpha8,
     "Alpha9": alpha9,
+    "Alpha10": alpha10,
     "Alpha11": alpha11,
     "Alpha12": alpha12,
     "Alpha13": alpha13,
     "Alpha14": alpha14,
     "Alpha15": alpha15,
+    "Alpha16": alpha16,
+    "Alpha17": alpha17,
     "Alpha18": alpha18,
     "Alpha19": alpha19,
     "Alpha20": alpha20,
@@ -4058,15 +5004,21 @@ FACTORS = {
     "Alpha28": alpha28,
     "Alpha29": alpha29,
     "Alpha31": alpha31,
+    "Alpha32": alpha32,
+    "Alpha33": alpha33,
     "Alpha34": alpha34,
+    "Alpha35": alpha35,
+    "Alpha36": alpha36,
     "Alpha37": alpha37,
     "Alpha38": alpha38,
+    "Alpha39": alpha39,
     "Alpha40": alpha40,
     "Alpha41": alpha41,
     "Alpha42": alpha42,
     # "Alpha999": alpha999,
     "Alpha43": alpha43,
     "Alpha44": alpha44,
+    "Alpha45": alpha45,
     "Alpha46": alpha46,
     "Alpha47": alpha47,
     "Alpha48": alpha48,
@@ -4077,12 +5029,15 @@ FACTORS = {
     "Alpha53": alpha53,
     "Alpha54": alpha54,
     "Alpha55": alpha55,
+    "Alpha56": alpha56,
     "Alpha57": alpha57,
     "Alpha58": alpha58,
     "Alpha59": alpha59,
     "Alpha60": alpha60,
+    "Alpha61": alpha61,
     "Alpha62": alpha62,
     "Alpha63": alpha63,
+    "Alpha64": alpha64,
     "Alpha65": alpha65,
     "Alpha66": alpha66,
     "Alpha67": alpha67,
@@ -4091,8 +5046,11 @@ FACTORS = {
     "Alpha70": alpha70,
     "Alpha71": alpha71,
     "Alpha72": alpha72,
+    "Alpha73": alpha73,
+    "Alpha74": alpha74,
     "Alpha75": alpha75,
     "Alpha76": alpha76,
+    "Alpha77": alpha77,
     "Alpha78": alpha78,
     "Alpha79": alpha79,
     "Alpha80": alpha80,
@@ -4102,9 +5060,12 @@ FACTORS = {
     "Alpha84": alpha84,
     "Alpha85": alpha85,
     "Alpha86": alpha86,
+    "Alpha87": alpha87,
     "Alpha88": alpha88,
     "Alpha89": alpha89,
     "Alpha90": alpha90,
+    "Alpha91": alpha91,
+    "Alpha92": alpha92,
     "Alpha93": alpha93,
     "Alpha94": alpha94,
     "Alpha95": alpha95,
@@ -4113,32 +5074,48 @@ FACTORS = {
     "Alpha98": alpha98,
     "Alpha99": alpha99,
     "Alpha100": alpha100,
+    "Alpha101": alpha101,
     "Alpha102": alpha102,
     "Alpha103": alpha103,
+    "Alpha104": alpha104,
     "Alpha105": alpha105,
     "Alpha106": alpha106,
     "Alpha107": alpha107,
+    "Alpha108": alpha108,
     "Alpha109": alpha109,
     "Alpha110": alpha110,
     "Alpha111": alpha111,
     "Alpha112": alpha112,
+    "Alpha113": alpha113,
+    "Alpha114": alpha114,
+    "Alpha115": alpha115,
     "Alpha116": alpha116,
     "Alpha117": alpha117,
     "Alpha118": alpha118,
+    "Alpha119": alpha119,
     "Alpha120": alpha120,
+    "Alpha121": alpha121,
     "Alpha122": alpha122,
+    "Alpha123": alpha123,
+    "Alpha124": alpha124,
+    "Alpha125": alpha125,
     "Alpha126": alpha126,
     "Alpha127": alpha127,
     "Alpha128": alpha128,
     "Alpha129": alpha129,
+    "Alpha130": alpha130,
+    "Alpha131": alpha131,
     "Alpha132": alpha132,
     "Alpha133": alpha133,
     "Alpha134": alpha134,
     "Alpha135": alpha135,
     "Alpha136": alpha136,
     "Alpha137": alpha137,
+    "Alpha138": alpha138,
     "Alpha139": alpha139,
+    "Alpha140": alpha140,
     "Alpha141": alpha141,
+    "Alpha142": alpha142,
     "Alpha143": alpha143,
     "Alpha144": alpha144,
     "Alpha145": alpha145,
@@ -4152,6 +5129,8 @@ FACTORS = {
     "Alpha153": alpha153,
     "Alpha154": alpha154,
     "Alpha155": alpha155,
+    "Alpha156": alpha156,
+    "Alpha157": alpha157,
     "Alpha158": alpha158,
     "Alpha159": alpha159,
     "Alpha160": alpha160,
@@ -4170,9 +5149,12 @@ FACTORS = {
     "Alpha173": alpha173,
     "Alpha174": alpha174,
     "Alpha175": alpha175,
+    "Alpha176": alpha176,
     "Alpha177": alpha177,
     "Alpha178": alpha178,
+    "Alpha179": alpha179,
     "Alpha180": alpha180,
+    "Alpha181": alpha181,
     "Alpha182": alpha182,
     "Alpha183": alpha183,
     "Alpha184": alpha184,
